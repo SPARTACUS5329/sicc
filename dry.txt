@@ -1,0 +1,130 @@
+// Input Grammar
+
+"""
+	(nonTerminal -> rules;)+
+"""
+
+program ->
+	directives
+	productions
+;
+
+directives ->
+	"%left" terminals
+	| "%right" terminals
+;
+
+productions ->
+	productions production
+	| eps
+;
+
+production ->
+	nonTerminal "->" rules
+;
+
+rules ->
+	rule
+	| rule "|" rules
+;
+
+rule ->
+	"@" identifier element
+	// | "@" identifier element body
+;
+
+element ->
+	nonTerminal
+	| terminal
+;
+
+body ->
+	"{" statements "}"
+;
+
+statements ->
+	statements statement
+	| eps
+;
+
+statement ->
+	// TBD
+;
+
+nonTerminal ->
+	alpha_lex
+;
+
+terminal ->
+	\"alphanumeric_lex\"
+;
+
+
+// Sample Input
+
+%left "+" "-"
+
+exp ->
+	@plus exp "+" exp
+	| @minus exp "-" exp
+	| @value NUMBER
+;
+
+// Sample Intermediate
+
+S ->
+	exp
+;
+
+exp ->
+	@plus exp "+" exp_1
+	| @minus exp "-" exp_1
+	| @value exp_1
+;
+
+exp_1 ->
+	NUMBER
+;
+
+// Sample Output
+
+// parser.h
+
+#pragma once
+
+typedef enum {
+	EXP_PLUS,
+	EXP_MINUS,
+	EXP_VALUE
+} exp_e;
+
+typedef struct Exp {
+	exp_e type;
+	union {
+		exp_plus_t *plus;
+		exp_minus_t *minus;
+		exp_value_t *value;
+	} exp;
+} exp_t;
+
+typedef struct ExpPlus {
+	exp_t *exp1;
+	exp_t *exp2;
+} exp_plus_t;
+
+typedef struct ExpMinus {
+	exp_t *exp1;
+	exp_t *exp2;
+} exp_minus_t;
+
+typedef struct ExpValue {
+	int value;
+} exp_value_t;
+
+// parser.c
+
+#include "parser.h"
+
+int main () {
+	
+}
