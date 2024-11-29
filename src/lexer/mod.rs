@@ -20,10 +20,6 @@ impl Clone for LexerNode {
 pub fn construct_lexer_trie() -> Result<Rc<RefCell<LexerNode>>, String> {
     let lexer_grammar_filename = String::from("./assets/lexer_grammar.txt");
     let mut node_map = HashMap::<i32, Rc<RefCell<LexerNode>>>::new();
-    let root = Rc::new(RefCell::new(LexerNode {
-        id: 0,
-        next: HashMap::<String, Rc<RefCell<LexerNode>>>::new(),
-    }));
 
     let Ok(lines) = utils::read_lines(&lexer_grammar_filename) else {
         return Err("Error in readling lexer grammar file".to_string());
@@ -96,6 +92,11 @@ pub fn construct_lexer_trie() -> Result<Rc<RefCell<LexerNode>>, String> {
                 .insert(char.to_string(), Rc::clone(&neighbour));
         }
     }
+
+    let root = match node_map.get(&0) {
+        Some(root) => Rc::clone(&root),
+        _ => return Err("Root node not found".to_string()),
+    };
 
     Ok(root)
 }
