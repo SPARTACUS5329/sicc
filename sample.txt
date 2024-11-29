@@ -1,0 +1,9 @@
+%left "+" "-"
+
+%%
+
+exp ->
+	@plus exp "+" exp
+	| @minus exp "-" exp
+	| @value NUMBER
+;

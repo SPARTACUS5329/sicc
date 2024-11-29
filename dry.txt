@@ -6,6 +6,7 @@
 
 program ->
 	directives
+	"%%"
 	productions
 ;
 
@@ -63,6 +64,8 @@ terminal ->
 // Sample Input
 
 %left "+" "-"
+
+%%
 
 exp ->
 	@plus exp "+" exp
