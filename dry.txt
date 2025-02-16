@@ -11,17 +11,22 @@ program ->
 ;
 
 directives ->
+	directive directives
+	| eps
+;
+
+directive ->
 	"%left" terminals
 	| "%right" terminals
 ;
 
 productions ->
-	productions production
-	| eps
+	production
+	| production productions
 ;
 
 production ->
-	nonTerminal "->" rules
+	nonTerminal "->" rules ";"
 ;
 
 rules ->
@@ -32,6 +37,11 @@ rules ->
 rule ->
 	"@" identifier element
 	// | "@" identifier element body
+;
+
+elements ->
+	element elements
+	| eps
 ;
 
 element ->
