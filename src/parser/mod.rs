@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 use crate::utils::NiceError;
 
 #[derive(Clone)]
@@ -410,4 +408,31 @@ impl Program {
 
 pub fn recursive_descent(tokens: Vec<String>) -> Result<Program, NiceError> {
     Program::parse(tokens, 0)
+}
+
+pub struct LexerRule {
+    pub identifier: String,
+    pub regex: String,
+}
+
+pub fn read_lexer_grammar(rules: Vec<String>) -> Result<Vec<LexerRule>, NiceError> {
+    let mut lexer_rules: Vec<LexerRule> = Vec::new();
+
+    for rule in rules.iter() {
+        let parts: Vec<&str> = rule.splitn(2, ": ").collect();
+
+        if parts.len() == 2 {
+            lexer_rules.push(LexerRule {
+                identifier: parts[0].to_string(),
+                regex: parts[1].to_string(),
+            });
+        } else {
+            return Err(NiceError::new(format!(
+                "Error in lexer grammar, received {}",
+                rule
+            )));
+        }
+    }
+
+    Ok(lexer_rules)
 }

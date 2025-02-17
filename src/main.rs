@@ -1,27 +1,24 @@
-use core::panic;
 use std::env;
+
+use utils::NiceError;
 mod lexer;
 mod parser;
 mod utils;
 
-fn main() {
+fn main() -> Result<(), NiceError> {
     let args: Vec<String> = env::args().collect();
-    let filename = &args[1];
+    let parser_grammar_filename = &args[1];
+    let lexer_grammar_filename = &args[2];
 
-    if let Ok(contents) = utils::read_file(&filename) {
-        let Ok(tokens) = lexer::lexer(&contents) else {
-            panic!("Error in lexing the grammar");
-        };
+    let parse_grammar_contents = utils::read_file(parser_grammar_filename)?;
+    let tokens = lexer::lexer(&parse_grammar_contents).expect("Error in lexing the grammar");
 
-        for (_, token) in tokens.iter().enumerate() {
-            println!("{}", token);
-        }
+    let _program = parser::recursive_descent(tokens).expect("Error in parsing program");
 
-        let _program = match parser::recursive_descent(tokens) {
-            Ok(program) => program,
-            Err(_) => panic!("Error in parsing program"),
-        };
-    } else {
-        panic!("Error in reading file");
-    }
+    let lexer_grammar_contents = utils::read_lines(lexer_grammar_filename)?;
+
+    let lexer_rules = parser::read_lexer_grammar(lexer_grammar_contents)?;
+    println!("{}", lexer_rules[0].regex);
+
+    Ok(())
 }
