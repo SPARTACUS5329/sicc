@@ -12,8 +12,9 @@ impl NiceError {
         error
     }
 
-    pub fn show(&self) {
+    pub fn show(self) -> NiceError {
         eprintln!("{}", self.message);
+        self
     }
 }
 

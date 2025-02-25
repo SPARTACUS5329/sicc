@@ -172,7 +172,7 @@ impl Rules {
 
         let mut rules = Rules {
             ruleset,
-            pos: index,
+            pos: rule.pos,
         };
 
         index = rule.pos + 1;
@@ -186,7 +186,8 @@ impl Rules {
             return Err(NiceError::new(format!(
                 "Invalid delimiter in ruleset, received {}",
                 tokens[index as usize]
-            )));
+            ))
+            .show());
         }
 
         index += 1;

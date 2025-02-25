@@ -2,43 +2,23 @@ use crate::utils::{self, NiceError};
 use regex::Regex;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-#[derive(PartialEq, Debug)]
-pub enum LexerNodeE {
-    LexerNodeRoot,
-    LexerNodeTerminal,
-    LexerNodeRegular,
+#[derive(PartialEq, Debug, Clone)]
+pub enum DFANodeE {
+    DFANodeRoot,
+    DFANodeTerminal,
+    DFANodeRegular,
 }
 
-impl Clone for LexerNodeE {
-    fn clone(&self) -> Self {
-        match self {
-            LexerNodeE::LexerNodeRoot => LexerNodeE::LexerNodeRoot,
-            LexerNodeE::LexerNodeTerminal => LexerNodeE::LexerNodeTerminal,
-            LexerNodeE::LexerNodeRegular => LexerNodeE::LexerNodeRegular,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct LexerNode {
-    pub kind: LexerNodeE,
+#[derive(Debug, Clone)]
+pub struct DFANode {
+    pub kind: DFANodeE,
     pub id: i32,
-    pub next: HashMap<String, Rc<RefCell<LexerNode>>>,
+    pub next: HashMap<String, Rc<RefCell<DFANode>>>,
 }
 
-impl Clone for LexerNode {
-    fn clone(&self) -> Self {
-        LexerNode {
-            kind: self.kind.clone(),
-            id: self.id,
-            next: self.next.clone(),
-        }
-    }
-}
-
-pub fn construct_lexer_trie() -> Result<Rc<RefCell<LexerNode>>, NiceError> {
+pub fn construct_lexer_trie() -> Result<Rc<RefCell<DFANode>>, NiceError> {
     let lexer_grammar_filename = String::from("./assets/lexer_grammar.txt");
-    let mut node_map = HashMap::<i32, Rc<RefCell<LexerNode>>>::new();
+    let mut node_map = HashMap::<i32, Rc<RefCell<DFANode>>>::new();
 
     let Ok(lines) = utils::read_lines(&lexer_grammar_filename) else {
         return Err(NiceError::new("Error in readling lexer grammar file".to_string()));
@@ -48,23 +28,23 @@ pub fn construct_lexer_trie() -> Result<Rc<RefCell<LexerNode>>, NiceError> {
     for (i, _line) in lines.iter().enumerate() {
         node_count += 1;
         let index = i as i32;
-        let node = Rc::new(RefCell::new(LexerNode {
+        let node = Rc::new(RefCell::new(DFANode {
             kind: if index == 0 {
-                LexerNodeE::LexerNodeRoot
+                DFANodeE::DFANodeRoot
             } else {
-                LexerNodeE::LexerNodeRegular
+                DFANodeE::DFANodeRegular
             },
             id: index,
-            next: HashMap::<String, Rc<RefCell<LexerNode>>>::new(),
+            next: HashMap::<String, Rc<RefCell<DFANode>>>::new(),
         }));
 
         node_map.insert(index, Rc::clone(&node));
     }
 
-    let terminal_node = Rc::new(RefCell::new(LexerNode {
-        kind: LexerNodeE::LexerNodeTerminal,
+    let terminal_node = Rc::new(RefCell::new(DFANode {
+        kind: DFANodeE::DFANodeTerminal,
         id: node_count,
-        next: HashMap::<String, Rc<RefCell<LexerNode>>>::new(),
+        next: HashMap::<String, Rc<RefCell<DFANode>>>::new(),
     }));
 
     for line in lines {
@@ -92,7 +72,7 @@ pub fn construct_lexer_trie() -> Result<Rc<RefCell<LexerNode>>, NiceError> {
             let char = captures.get(1).map_or("", |m| m.as_str());
             let neighbour_str = captures.get(2).map_or("", |m| m.as_str());
 
-            let neighbour: Rc<RefCell<LexerNode>> = match neighbour_str {
+            let neighbour: Rc<RefCell<DFANode>> = match neighbour_str {
                 "#" => Rc::clone(&terminal_node),
                 _ => {
                     let Ok(neighbour_id) = neighbour_str.parse::<i32>() else {
@@ -125,14 +105,7 @@ pub fn lexer(contents: &String) -> Result<Vec<String>, NiceError> {
     let mut curr_token = String::from("");
     let mut tokens: Vec<String> = vec![];
     let chars: Vec<char> = contents.chars().collect();
-    let root = match construct_lexer_trie() {
-        Ok(root) => root,
-        _ => {
-            return Err(NiceError::new(
-                "Error in constructing lexer trie".to_string(),
-            ))
-        }
-    };
+    let root = construct_lexer_trie().expect("Error in constructing lexer trie");
 
     let mut node = Rc::clone(&root);
 
@@ -175,7 +148,7 @@ pub fn lexer(contents: &String) -> Result<Vec<String>, NiceError> {
                         _ => return Err(NiceError::new("Unexpected token: digit".to_string())),
                     };
 
-                    if node.borrow().kind != LexerNodeE::LexerNodeRoot {
+                    if node.borrow().kind != DFANodeE::DFANodeRoot {
                         i -= 1;
                     } else {
                         curr_token += &c.to_string();
@@ -187,7 +160,7 @@ pub fn lexer(contents: &String) -> Result<Vec<String>, NiceError> {
         };
 
         node = match neighbour.borrow().kind {
-            LexerNodeE::LexerNodeTerminal => {
+            DFANodeE::DFANodeTerminal => {
                 if curr_token.len() > 0 {
                     tokens.push(curr_token);
                     curr_token = String::from("");

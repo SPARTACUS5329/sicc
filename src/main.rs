@@ -1,8 +1,10 @@
 use std::env;
 
 use utils::NiceError;
+mod generator;
 mod lexer;
 mod parser;
+mod regex2dfa;
 mod utils;
 
 fn main() -> Result<(), NiceError> {
@@ -18,7 +20,8 @@ fn main() -> Result<(), NiceError> {
     let lexer_grammar_contents = utils::read_lines(lexer_grammar_filename)?;
 
     let lexer_rules = parser::read_lexer_grammar(lexer_grammar_contents)?;
-    println!("{}", lexer_rules[0].regex);
+
+    generator::construct_kmp_dfa(lexer_rules);
 
     Ok(())
 }
