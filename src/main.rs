@@ -19,9 +19,9 @@ fn main() -> Result<(), NiceError> {
 
     let lexer_grammar_contents = utils::read_lines(lexer_grammar_filename)?;
 
-    let lexer_rules = parser::read_lexer_grammar(lexer_grammar_contents)?;
+    let mut lexer_rules = parser::read_lexer_grammar(lexer_grammar_contents)?;
 
-    generator::construct_kmp_dfa(lexer_rules);
+    generator::construct_kmp_dfa(&mut lexer_rules);
 
     Ok(())
 }

@@ -2,7 +2,7 @@ use crate::{
     lexer::{DFANode, DFANodeE},
     utils::NiceError,
 };
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 fn handle_special_regex_element(
     node: Rc<RefCell<DFANode>>,
@@ -17,11 +17,10 @@ fn handle_special_regex_element(
     };
 
     let next_c = chars[(*index + 1) as usize];
-    let next_node = Rc::new(RefCell::new(DFANode {
-        kind: DFANodeE::DFANodeRegular,
-        id: node_count,
-        next: HashMap::new(),
-    }));
+    let next_node = Rc::new(RefCell::new(DFANode::new(
+        DFANodeE::DFANodeRegular,
+        node_count,
+    )));
 
     *key = match next_c {
         '%' | '+' | '*' | '$' => Some(next_c.to_string()),
@@ -44,15 +43,12 @@ fn handle_general_regex_element(
     node_count: i32,
     key: &mut Option<String>,
 ) -> Result<Rc<RefCell<DFANode>>, NiceError> {
-    let next_node = Rc::new(RefCell::new(DFANode {
-        kind: if c == '$' {
-            DFANodeE::DFANodeTerminal
-        } else {
-            DFANodeE::DFANodeRegular
-        },
-        id: node_count,
-        next: HashMap::new(),
-    }));
+    let kind = if c == '$' {
+        DFANodeE::DFANodeTerminal
+    } else {
+        DFANodeE::DFANodeRegular
+    };
+    let next_node = Rc::new(RefCell::new(DFANode::new(kind, node_count)));
 
     *key = Some(c.to_string());
     node.borrow_mut()
@@ -136,7 +132,10 @@ fn handle_regex_operation(
     Ok(())
 }
 
-pub fn regex2dfa(regex: String, node_count: &mut i32) -> Result<Rc<RefCell<DFANode>>, NiceError> {
+pub fn regex2dfa(
+    regex: String,
+    node_count: &mut i32,
+) -> Result<(Rc<RefCell<DFANode>>, Rc<RefCell<DFANode>>, i32), NiceError> {
     let chars: Vec<char> = regex.chars().collect();
     if chars[0] != '^' {
         return Err(NiceError::new(
@@ -144,11 +143,10 @@ pub fn regex2dfa(regex: String, node_count: &mut i32) -> Result<Rc<RefCell<DFANo
         ));
     }
 
-    let root = Rc::new(RefCell::new(DFANode {
-        kind: DFANodeE::DFANodeRoot,
-        id: *node_count,
-        next: HashMap::new(),
-    }));
+    let root = Rc::new(RefCell::new(DFANode::new(
+        DFANodeE::DFANodeRoot,
+        *node_count,
+    )));
 
     *node_count += 1;
 
@@ -192,5 +190,5 @@ pub fn regex2dfa(regex: String, node_count: &mut i32) -> Result<Rc<RefCell<DFANo
         index += 1;
     }
 
-    Ok(root)
+    Ok((root, node, *node_count))
 }

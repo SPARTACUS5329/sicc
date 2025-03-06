@@ -1,4 +1,6 @@
-use crate::utils::NiceError;
+use std::{cell::RefCell, rc::Rc};
+
+use crate::{lexer::DFANode, utils::NiceError};
 
 #[derive(Clone)]
 pub struct Terminal {
@@ -411,9 +413,11 @@ pub fn recursive_descent(tokens: Vec<String>) -> Result<Program, NiceError> {
     Program::parse(tokens, 0)
 }
 
+#[derive(Debug, Clone)]
 pub struct LexerRule {
     pub identifier: String,
     pub regex: String,
+    pub dfa_root: Option<Rc<RefCell<DFANode>>>,
 }
 
 pub fn read_lexer_grammar(rules: Vec<String>) -> Result<Vec<LexerRule>, NiceError> {
@@ -424,6 +428,7 @@ pub fn read_lexer_grammar(rules: Vec<String>) -> Result<Vec<LexerRule>, NiceErro
 
         if parts.len() == 2 {
             lexer_rules.push(LexerRule {
+                dfa_root: None,
                 identifier: parts[0].to_string(),
                 regex: parts[1].to_string(),
             });

@@ -1,6 +1,14 @@
-use crate::utils::{self, NiceError};
+use crate::{
+    parser::LexerRule,
+    utils::{self, NiceError},
+};
 use regex::Regex;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    fmt,
+    rc::Rc,
+};
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum DFANodeE {
@@ -14,6 +22,91 @@ pub struct DFANode {
     pub kind: DFANodeE,
     pub id: i32,
     pub next: HashMap<String, Rc<RefCell<DFANode>>>,
+    pub lexeme: Option<Rc<LexerRule>>,
+}
+
+impl DFANode {
+    pub fn new(kind: DFANodeE, id: i32) -> Self {
+        DFANode {
+            kind,
+            id,
+            next: HashMap::new(),
+            lexeme: None,
+        }
+    }
+}
+
+impl fmt::Display for DFANode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Create a set to track visited nodes and prevent infinite recursion
+        let mut visited_nodes = HashSet::new();
+
+        // Write the GraphViz header
+        writeln!(f, "digraph DFA {{")?;
+        writeln!(f, "    rankdir=LR;")?;
+        writeln!(f, "    node [shape=circle];")?;
+
+        // Recursive helper function to generate graph
+        fn generate_graph(
+            node: &DFANode,
+            visited: &mut HashSet<i32>,
+            f: &mut fmt::Formatter<'_>,
+        ) -> fmt::Result {
+            // Prevent revisiting nodes
+            if visited.contains(&node.id) {
+                return Ok(());
+            }
+            visited.insert(node.id);
+
+            // Node label with additional information
+            let node_label = match node.kind {
+                DFANodeE::DFANodeRoot => format!("Node {} (Start)", node.id),
+                DFANodeE::DFANodeTerminal => format!("Node {} (Final)", node.id),
+                DFANodeE::DFANodeRegular => format!("Node {}", node.id),
+            };
+
+            // Style the node based on its type
+            let _node_style = match node.kind {
+                DFANodeE::DFANodeRoot => "[shape=circle,style=bold]",
+                DFANodeE::DFANodeTerminal => "[shape=doublecircle]",
+                DFANodeE::DFANodeRegular => "[shape=circle]",
+            };
+
+            // Write node with its style
+            writeln!(f, "    {} [label=\"{}\"];", node.id, node_label)?;
+
+            // Recurse through and draw edges
+            for (transition, next_node) in &node.next {
+                let borrowed_next = next_node.borrow();
+
+                // Draw edge with transition label
+                writeln!(
+                    f,
+                    "    {} -> {} [label=\"{}\"];",
+                    node.id, borrowed_next.id, transition
+                )?;
+
+                // Recursively process next node
+                generate_graph(&borrowed_next, visited, f)?;
+            }
+
+            Ok(())
+        }
+
+        // Start graph generation from this node
+        generate_graph(self, &mut visited_nodes, f)?;
+
+        // Close the GraphViz graph
+        writeln!(f, "}}")?;
+
+        Ok(())
+    }
+}
+
+impl PartialEq for DFANode {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
 }
 
 pub fn construct_lexer_trie() -> Result<Rc<RefCell<DFANode>>, NiceError> {
@@ -28,24 +121,20 @@ pub fn construct_lexer_trie() -> Result<Rc<RefCell<DFANode>>, NiceError> {
     for (i, _line) in lines.iter().enumerate() {
         node_count += 1;
         let index = i as i32;
-        let node = Rc::new(RefCell::new(DFANode {
-            kind: if index == 0 {
-                DFANodeE::DFANodeRoot
-            } else {
-                DFANodeE::DFANodeRegular
-            },
-            id: index,
-            next: HashMap::<String, Rc<RefCell<DFANode>>>::new(),
-        }));
+        let kind = if index == 0 {
+            DFANodeE::DFANodeRoot
+        } else {
+            DFANodeE::DFANodeRegular
+        };
+        let node = Rc::new(RefCell::new(DFANode::new(kind, index)));
 
         node_map.insert(index, Rc::clone(&node));
     }
 
-    let terminal_node = Rc::new(RefCell::new(DFANode {
-        kind: DFANodeE::DFANodeTerminal,
-        id: node_count,
-        next: HashMap::<String, Rc<RefCell<DFANode>>>::new(),
-    }));
+    let terminal_node = Rc::new(RefCell::new(DFANode::new(
+        DFANodeE::DFANodeTerminal,
+        node_count,
+    )));
 
     for line in lines {
         let Some((node_number, edges)) = line.split_once(":") else {
