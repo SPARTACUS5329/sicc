@@ -1,8 +1,14 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashSet,
+    fmt,
+    hash::{Hash, Hasher},
+    rc::Rc,
+};
 
 use crate::{lexer::DFANode, utils::NiceError};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Terminal {
     pub value: String,
     pos: i32,
@@ -40,10 +46,16 @@ impl Terminal {
     }
 }
 
-#[derive(Clone)]
-pub struct NonTerminal {
+#[derive(Clone, PartialEq, Eq)]
+pub struct Lexeme {
     pub value: String,
     pos: i32,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct NonTerminal {
+    pub value: String,
+    pub pos: i32,
 }
 
 impl NonTerminal {
@@ -68,16 +80,52 @@ impl NonTerminal {
     }
 }
 
-#[derive(Clone)]
-enum ElementE {
+#[derive(Clone, PartialEq, Eq)]
+pub enum ElementE {
+    ElementLexeme(Lexeme),
     ElementTerminal(Terminal),
     ElementNonTerminal(NonTerminal),
 }
 
-#[derive(Clone)]
+impl fmt::Display for ElementE {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ElementE::ElementLexeme(l) => write!(f, "{}", l.value),
+            ElementE::ElementTerminal(t) => write!(f, "{}", t.value),
+            ElementE::ElementNonTerminal(nt) => write!(f, "{}", nt.value),
+        }
+    }
+}
+
+impl Hash for ElementE {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            ElementE::ElementTerminal(terminal) => {
+                0.hash(state);
+                terminal.value.hash(state);
+            }
+            ElementE::ElementNonTerminal(non_terminal) => {
+                1.hash(state);
+                non_terminal.value.hash(state);
+            }
+            ElementE::ElementLexeme(lexeme) => {
+                2.hash(state);
+                lexeme.value.hash(state);
+            }
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Element {
     pub element: ElementE,
-    pos: i32,
+    pub pos: i32,
+}
+
+impl fmt::Display for Element {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.element)
+    }
 }
 
 impl Element {
@@ -99,12 +147,20 @@ impl Element {
             })
             .map_err(|_| NiceError::new("Invalid element".to_string()))
     }
+
+    pub fn get_value(&self) -> String {
+        match &self.element {
+            ElementE::ElementLexeme(lexeme) => lexeme.value.clone(),
+            ElementE::ElementNonTerminal(non_terminal) => non_terminal.value.clone(),
+            ElementE::ElementTerminal(terminal) => terminal.value.clone(),
+        }
+    }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct Elements {
     pub element_set: Vec<Element>,
-    pos: i32,
+    pub pos: i32,
 }
 
 impl Elements {
@@ -126,11 +182,30 @@ impl Elements {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct Rule {
     pub annotation: String,
     pub elements: Elements,
-    pos: i32,
+    pub pos: i32,
+}
+
+impl fmt::Display for Rule {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: ", self.annotation)?;
+
+        for (i, element) in self.elements.element_set.iter().enumerate() {
+            if i as i32 == self.pos {
+                write!(f, "• ")?;
+            }
+            write!(f, "{} ", element)?;
+        }
+
+        if self.pos as usize == self.elements.element_set.len() {
+            write!(f, "•")?;
+        }
+
+        Ok(())
+    }
 }
 
 impl Rule {
@@ -441,4 +516,29 @@ pub fn read_lexer_grammar(rules: Vec<String>) -> Result<Vec<LexerRule>, NiceErro
     }
 
     Ok(lexer_rules)
+}
+
+pub fn replace_lexemes(program: &mut Program, lexer_rules: &Vec<LexerRule>) {
+    let lexemes: HashSet<String> = lexer_rules
+        .iter()
+        .map(|rule| rule.identifier.clone())
+        .collect();
+
+    for production in program.productions.production_set.iter_mut() {
+        for rule in production.rules.ruleset.iter_mut() {
+            for element in rule.elements.element_set.iter_mut() {
+                match &element.element {
+                    ElementE::ElementNonTerminal(non_terminal) => {
+                        if lexemes.contains(&non_terminal.value) {
+                            element.element = ElementE::ElementLexeme(Lexeme {
+                                value: non_terminal.value.clone(),
+                                pos: 0,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 }

@@ -1,39 +1,53 @@
 digraph DFA {
     rankdir=LR;
     node [shape=circle];
-    0 [label="Node 0 (Start)"];
-    0 -> 1 [label="%d"];
-    1 [label="Node 1"];
-    1 -> 2 [label="%s"];
-    2 [label="Node 2"];
-    2 -> 22 [label="%s"];
-    22 [label="Node 22"];
-    22 -> 22 [label="%s"];
-    22 -> 3 [label="%S"];
-    3 [label="Node 3"];
-    3 -> 5 [label="i"];
-    5 [label="Node 5"];
-    5 -> 6 [label="f"];
-    6 [label="Node 6"];
-    6 -> 7 [label="$"];
-    7 [label="Node 7 (Final)"];
-    3 -> 3 [label="%S"];
-    3 -> 4 [label="%."];
-    4 [label="Node 4"];
-    4 -> 19 [label="f"];
-    19 [label="Node 19"];
-    19 -> 20 [label="i"];
-    20 [label="Node 20"];
-    20 -> 21 [label="$"];
-    21 [label="Node 21 (Final)"];
-    4 -> 4 [label="%."];
-    4 -> 5 [label="i"];
-    3 -> 19 [label="f"];
-    2 -> 11 [label="%S"];
-    11 [label="Node 11"];
-    11 -> 12 [label="i"];
-    12 [label="Node 12"];
-    12 -> 13 [label="$"];
-    13 [label="Node 13 (Final)"];
+    0 [label="State 0\nDerivatives: exp -> plus: • exp + exp 
+  exp -> value: • NUMBER 
+  exp -> minus: • exp - exp 
+  exp' -> primary_augmentation: • exp 
+ "];
+
+    0 -> 1 [label="NUMBER"];
+    1 [label="State 1\nDerivatives: exp -> value: NUMBER •
+ "];
+
+    0 -> 2 [label="exp"];
+    2 [label="State 2\nDerivatives: exp -> minus: exp • - exp 
+  exp -> plus: exp • + exp 
+  exp' -> primary_augmentation: exp •
+ "];
+
+    2 -> 5 [label="+"];
+    5 [label="State 5\nDerivatives: exp -> minus: • exp - exp 
+  exp -> value: • NUMBER 
+  exp -> plus: exp + • exp 
+  exp -> plus: • exp + exp 
+ "];
+
+    5 -> 1 [label="NUMBER"];
+    5 -> 6 [label="exp"];
+    6 [label="State 6\nDerivatives: exp -> minus: exp • - exp 
+  exp -> plus: exp + exp •
+  exp -> plus: exp • + exp 
+ "];
+
+    6 -> 5 [label="+"];
+    6 -> 3 [label="-"];
+    3 [label="State 3\nDerivatives: exp -> value: • NUMBER 
+  exp -> minus: • exp - exp 
+  exp -> minus: exp - • exp 
+  exp -> plus: • exp + exp 
+ "];
+
+    3 -> 1 [label="NUMBER"];
+    3 -> 4 [label="exp"];
+    4 [label="State 4\nDerivatives: exp -> minus: exp • - exp 
+  exp -> minus: exp - exp •
+  exp -> plus: exp • + exp 
+ "];
+
+    4 -> 5 [label="+"];
+    4 -> 3 [label="-"];
+    2 -> 3 [label="-"];
 }
 

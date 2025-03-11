@@ -15,13 +15,15 @@ fn main() -> Result<(), NiceError> {
     let parse_grammar_contents = utils::read_file(parser_grammar_filename)?;
     let tokens = lexer::lexer(&parse_grammar_contents).expect("Error in lexing the grammar");
 
-    let _program = parser::recursive_descent(tokens).expect("Error in parsing program");
+    let mut program = parser::recursive_descent(tokens).expect("Error in parsing program");
 
     let lexer_grammar_contents = utils::read_lines(lexer_grammar_filename)?;
 
     let mut lexer_rules = parser::read_lexer_grammar(lexer_grammar_contents)?;
+    parser::replace_lexemes(&mut program, &lexer_rules);
 
-    generator::construct_kmp_dfa(&mut lexer_rules);
+    let _lexer_root = generator::construct_kmp_dfa(&mut lexer_rules);
+    generator::construct_fsm(program.productions);
 
     Ok(())
 }

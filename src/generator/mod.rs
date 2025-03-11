@@ -1,10 +1,107 @@
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 
 use crate::lexer::{DFANode, DFANodeE};
-use crate::parser::LexerRule;
+use crate::parser::{Element, ElementE, Elements, LexerRule, Production, Productions, Rule};
 use crate::regex2dfa;
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct Derivative {
+    pub non_terminal: String,
+    pub rule: Rule,
+}
+
+impl fmt::Display for Derivative {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} -> {}\n", self.non_terminal, self.rule)
+    }
+}
+
+#[derive(Clone)]
+struct LRState {
+    pub id: i32,
+    pub derivatives: HashSet<Derivative>,
+    pub next: HashMap<Element, Rc<RefCell<LRState>>>,
+}
+
+impl fmt::Display for LRState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Graphviz header
+        writeln!(f, "digraph DFA {{")?;
+        writeln!(f, "    rankdir=LR;")?;
+        writeln!(f, "    node [shape=circle];")?;
+
+        let mut visited = HashSet::new();
+        self.print_state(f, &mut visited)?;
+
+        writeln!(f, "}}") // Close the graph
+    }
+}
+
+impl PartialEq for LRState {
+    fn eq(&self, other: &Self) -> bool {
+        self.derivatives == other.derivatives
+    }
+}
+
+impl Hash for LRState {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let mut hashes: Vec<u64> = self
+            .derivatives
+            .iter()
+            .map(|d| {
+                let mut hasher = DefaultHasher::new();
+                d.hash(&mut hasher);
+                hasher.finish()
+            })
+            .collect();
+
+        hashes.sort_unstable();
+
+        hashes.hash(state);
+    }
+}
+
+impl LRState {
+    fn new(id: i32, derivatives: Vec<Derivative>) -> LRState {
+        LRState {
+            id,
+            derivatives: derivatives.into_iter().collect(),
+            next: HashMap::new(),
+        }
+    }
+
+    fn print_state(&self, f: &mut fmt::Formatter, visited: &mut HashSet<i32>) -> fmt::Result {
+        if !visited.insert(self.id) {
+            return Ok(()); // Skip already printed states
+        }
+
+        // Print current state node
+        write!(
+            f,
+            "    {} [label=\"State {}\\nDerivatives:",
+            self.id, self.id
+        )?;
+        for derivative in &self.derivatives {
+            write!(f, " {} ", derivative)?;
+        }
+        writeln!(f, "\"];\n")?;
+
+        // Print transitions
+        for (element, next_state) in &self.next {
+            let next_id = next_state.borrow().id;
+            writeln!(f, "    {} -> {} [label=\"{}\"];", self.id, next_id, element)?;
+
+            // Recursively print connected states
+            next_state.borrow().print_state(f, visited)?;
+        }
+
+        Ok(())
+    }
+}
 
 fn augment_node(
     node: Rc<RefCell<DFANode>>,
@@ -151,7 +248,7 @@ fn merge_dfa_into_trie(trie_head: Rc<RefCell<DFANode>>, rule: &LexerRule, node_c
     }
 }
 
-pub fn construct_kmp_dfa(lexer_rules: &mut Vec<LexerRule>) {
+pub fn construct_kmp_dfa(lexer_rules: &mut Vec<LexerRule>) -> Rc<RefCell<DFANode>> {
     let mut node_count = 0i32;
     let lexer_root = Rc::new(RefCell::new(DFANode::new(
         DFANodeE::DFANodeRoot,
@@ -171,5 +268,149 @@ pub fn construct_kmp_dfa(lexer_rules: &mut Vec<LexerRule>) {
         merge_dfa_into_trie(Rc::clone(&lexer_root), rule, &mut node_count);
     }
 
-    println!("{}", lexer_root.borrow());
+    lexer_root
+}
+
+fn augment_production(production: &Production) -> Derivative {
+    Derivative {
+        non_terminal: format!("{}'", production.non_terminal.value.clone()),
+        rule: Rule {
+            annotation: "primary_augmentation".to_string(),
+            elements: Elements {
+                element_set: vec![Element {
+                    element: ElementE::ElementNonTerminal(production.non_terminal.clone()),
+                    pos: 0,
+                }],
+                pos: 0,
+            },
+            pos: 0,
+        },
+    }
+}
+
+fn get_kernel_items(
+    element: Element,
+    directive_map: &HashMap<String, Vec<Derivative>>,
+) -> Vec<Derivative> {
+    let non_terminal = match element.element {
+        ElementE::ElementTerminal(_) | ElementE::ElementLexeme(_) => return Vec::new(),
+        ElementE::ElementNonTerminal(non_terminal) => non_terminal.value,
+    };
+
+    let derivatives: Vec<Derivative> = directive_map
+        .get(&non_terminal)
+        .expect(format!("No derivative found for non terminal {}", non_terminal).as_str())
+        .to_vec();
+
+    derivatives
+}
+
+fn fill_kernel(state: Rc<RefCell<LRState>>, directive_map: &HashMap<String, Vec<Derivative>>) {
+    let mut old_len = state.borrow().derivatives.len();
+
+    loop {
+        let mut derivatives: Vec<Derivative> = Vec::new();
+
+        for derivative in state.borrow().derivatives.iter() {
+            let index = derivative.rule.pos;
+            if let Some(element) = derivative.rule.elements.element_set.get(index as usize) {
+                let new_derivatives = get_kernel_items(element.clone(), directive_map);
+                derivatives.extend(new_derivatives);
+            }
+        }
+
+        state.borrow_mut().derivatives.extend(derivatives);
+
+        if state.borrow().derivatives.len() == old_len {
+            break;
+        }
+
+        old_len = state.borrow().derivatives.len();
+    }
+}
+
+fn construct_state(
+    derivatives: Vec<Derivative>,
+    derivative_map: &HashMap<String, Vec<Derivative>>,
+    states: &mut Vec<Rc<RefCell<LRState>>>,
+    node_count: &mut i32,
+) -> Rc<RefCell<LRState>> {
+    let state = Rc::new(RefCell::new(LRState::new(*node_count, derivatives)));
+    fill_kernel(Rc::clone(&state), derivative_map);
+
+    if let Some(other_state) = states.iter().find(|item| *item.borrow() == *state.borrow()) {
+        return Rc::clone(&other_state);
+    }
+
+    let mut next_derivatives_map: HashMap<String, Vec<Derivative>> = HashMap::new();
+    let mut element_map: HashMap<String, Element> = HashMap::new();
+
+    for derivative in state.borrow().derivatives.iter() {
+        let element = match derivative
+            .rule
+            .elements
+            .element_set
+            .get(derivative.rule.pos as usize)
+        {
+            Some(element) => element,
+            None => {
+                continue;
+            }
+        };
+
+        next_derivatives_map
+            .entry(element.get_value())
+            .or_insert_with(|| {
+                element_map
+                    .entry(element.get_value())
+                    .or_insert(element.clone());
+                Vec::new()
+            })
+            .push(derivative.clone());
+    }
+
+    states.push(Rc::clone(&state));
+    *node_count += 1;
+
+    for (token, next) in next_derivatives_map {
+        let mut next_derivatives: Vec<Derivative> = next.clone();
+        let element = element_map.get(&token).expect("element not found");
+        for next_derivative in next_derivatives.iter_mut() {
+            next_derivative.rule.pos += 1;
+        }
+        let next_state = construct_state(next_derivatives, derivative_map, states, node_count);
+        state.borrow_mut().next.insert(element.clone(), next_state);
+    }
+
+    state
+}
+
+pub fn construct_fsm(productions: Productions) {
+    let mut derivative_map: HashMap<String, Vec<Derivative>> = HashMap::new();
+
+    for production in productions.production_set.iter() {
+        let non_terminal = production.non_terminal.value.clone();
+        for rule in production.rules.ruleset.iter() {
+            let derivative = Derivative {
+                non_terminal: non_terminal.clone(),
+                rule: Rule {
+                    annotation: rule.annotation.clone(),
+                    elements: rule.elements.clone(),
+                    pos: 0,
+                },
+            };
+
+            derivative_map
+                .entry(non_terminal.clone())
+                .or_insert_with(Vec::new)
+                .push(derivative.clone());
+        }
+    }
+
+    let new_first_directive = augment_production(&productions.production_set[0]);
+    let mut states: Vec<Rc<RefCell<LRState>>> = Vec::new();
+    let derivatives = vec![new_first_directive];
+    let mut node_count = 0i32;
+    let i0 = construct_state(derivatives, &derivative_map, &mut states, &mut node_count);
+    println!("{}", i0.borrow());
 }
