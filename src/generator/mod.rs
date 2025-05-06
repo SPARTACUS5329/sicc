@@ -9,7 +9,7 @@ use crate::parser::{Element, ElementE, Elements, LexerRule, Production, Producti
 use crate::regex2dfa;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-struct Derivative {
+pub struct Derivative {
     pub non_terminal: String,
     pub rule: Rule,
 }
@@ -21,10 +21,11 @@ impl fmt::Display for Derivative {
 }
 
 #[derive(Clone)]
-struct LRState {
+pub struct LRState {
     pub id: i32,
     pub derivatives: HashSet<Derivative>,
     pub next: HashMap<Element, Rc<RefCell<LRState>>>,
+    pub slr_rules: HashMap<Element, Vec<SLRRuleE>>,
 }
 
 impl fmt::Display for LRState {
@@ -71,6 +72,7 @@ impl LRState {
             id,
             derivatives: derivatives.into_iter().collect(),
             next: HashMap::new(),
+            slr_rules: HashMap::new(),
         }
     }
 
@@ -101,6 +103,23 @@ impl LRState {
 
         Ok(())
     }
+}
+
+#[derive(Clone)]
+pub struct SLRShift {
+    pub next_state: Rc<RefCell<LRState>>,
+}
+
+#[derive(Clone)]
+pub struct SLRReduce {
+    pub derivative: Derivative,
+}
+
+#[derive(Clone)]
+pub enum SLRRuleE {
+    SLRRuleShift(SLRShift),
+    SLRRuleReduce(SLRReduce),
+    SLRRuleAccept,
 }
 
 fn augment_node(
@@ -385,7 +404,7 @@ fn construct_state(
     state
 }
 
-pub fn construct_fsm(productions: Productions) {
+pub fn construct_fsm(productions: Productions) -> Rc<RefCell<LRState>> {
     let mut derivative_map: HashMap<String, Vec<Derivative>> = HashMap::new();
 
     for production in productions.production_set.iter() {
@@ -407,10 +426,34 @@ pub fn construct_fsm(productions: Productions) {
         }
     }
 
-    let new_first_directive = augment_production(&productions.production_set[0]);
+    let new_first_derivative = augment_production(&productions.production_set[0]);
     let mut states: Vec<Rc<RefCell<LRState>>> = Vec::new();
-    let derivatives = vec![new_first_directive];
+    let derivatives = vec![new_first_derivative];
     let mut node_count = 0i32;
     let i0 = construct_state(derivatives, &derivative_map, &mut states, &mut node_count);
-    println!("{}", i0.borrow());
+
+    i0
+}
+
+pub fn construct_slr_table(state: Rc<RefCell<LRState>>, visited: &mut HashSet<i32>) {
+    if !visited.insert(state.borrow().id) {
+        return;
+    }
+
+    let next_entries = state.borrow_mut().next.clone();
+
+    for (element, next_state) in next_entries {
+        state
+            .borrow_mut()
+            .slr_rules
+            .entry(element)
+            .or_insert_with(Vec::new)
+            .push(SLRRuleE::SLRRuleShift(SLRShift {
+                next_state: Rc::clone(&next_state),
+            }));
+    }
+
+    for (_element, next_state) in &state.borrow().next {
+        construct_slr_table(Rc::clone(&next_state), visited);
+    }
 }

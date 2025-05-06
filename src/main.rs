@@ -1,5 +1,7 @@
 use std::env;
+use std::{collections::HashSet, rc::Rc};
 
+use parser::{Element, Lexeme, Terminal};
 use utils::NiceError;
 mod generator;
 mod lexer;
@@ -23,7 +25,9 @@ fn main() -> Result<(), NiceError> {
     parser::replace_lexemes(&mut program, &lexer_rules);
 
     let _lexer_root = generator::construct_kmp_dfa(&mut lexer_rules);
-    generator::construct_fsm(program.productions);
+    let parser_i0 = generator::construct_fsm(program.productions);
+    let mut visited: HashSet<i32> = HashSet::new();
+    generator::construct_slr_table(Rc::clone(&parser_i0), &mut visited);
 
     Ok(())
 }

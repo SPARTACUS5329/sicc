@@ -1,9 +1,9 @@
 digraph DFA {
     rankdir=LR;
     node [shape=circle];
-    0 [label="State 0\nDerivatives: exp -> plus: • exp + exp 
+    0 [label="State 0\nDerivatives: exp -> minus: • exp - exp 
   exp -> value: • NUMBER 
-  exp -> minus: • exp - exp 
+  exp -> plus: • exp + exp 
   exp' -> primary_augmentation: • exp 
  "];
 
@@ -12,42 +12,42 @@ digraph DFA {
  "];
 
     0 -> 2 [label="exp"];
-    2 [label="State 2\nDerivatives: exp -> minus: exp • - exp 
-  exp -> plus: exp • + exp 
+    2 [label="State 2\nDerivatives: exp -> plus: exp • + exp 
   exp' -> primary_augmentation: exp •
+  exp -> minus: exp • - exp 
  "];
 
-    2 -> 5 [label="+"];
-    5 [label="State 5\nDerivatives: exp -> minus: • exp - exp 
-  exp -> value: • NUMBER 
-  exp -> plus: exp + • exp 
+    2 -> 3 [label="-"];
+    3 [label="State 3\nDerivatives: exp -> minus: exp - • exp 
   exp -> plus: • exp + exp 
- "];
-
-    5 -> 1 [label="NUMBER"];
-    5 -> 6 [label="exp"];
-    6 [label="State 6\nDerivatives: exp -> minus: exp • - exp 
-  exp -> plus: exp + exp •
-  exp -> plus: exp • + exp 
- "];
-
-    6 -> 5 [label="+"];
-    6 -> 3 [label="-"];
-    3 [label="State 3\nDerivatives: exp -> value: • NUMBER 
   exp -> minus: • exp - exp 
-  exp -> minus: exp - • exp 
-  exp -> plus: • exp + exp 
+  exp -> value: • NUMBER 
  "];
 
-    3 -> 1 [label="NUMBER"];
     3 -> 4 [label="exp"];
-    4 [label="State 4\nDerivatives: exp -> minus: exp • - exp 
-  exp -> minus: exp - exp •
+    4 [label="State 4\nDerivatives: exp -> minus: exp - exp •
+  exp -> minus: exp • - exp 
   exp -> plus: exp • + exp 
  "];
 
     4 -> 5 [label="+"];
+    5 [label="State 5\nDerivatives: exp -> plus: exp + • exp 
+  exp -> value: • NUMBER 
+  exp -> plus: • exp + exp 
+  exp -> minus: • exp - exp 
+ "];
+
+    5 -> 6 [label="exp"];
+    6 [label="State 6\nDerivatives: exp -> plus: exp • + exp 
+  exp -> plus: exp + exp •
+  exp -> minus: exp • - exp 
+ "];
+
+    6 -> 3 [label="-"];
+    6 -> 5 [label="+"];
+    5 -> 1 [label="NUMBER"];
     4 -> 3 [label="-"];
-    2 -> 3 [label="-"];
+    3 -> 1 [label="NUMBER"];
+    2 -> 5 [label="+"];
 }
 

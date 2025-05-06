@@ -49,7 +49,7 @@ impl Terminal {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Lexeme {
     pub value: String,
-    pos: i32,
+    pub pos: i32,
 }
 
 #[derive(Clone, PartialEq, Eq)]
