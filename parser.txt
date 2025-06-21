@@ -6,8 +6,10 @@ exp ->
 	@plus exp "+" exp
 	| @minus exp "-" exp
 	| @value NUMBER
+	| @sample sample
 ;
 
 sample ->
 	@eps "eps"
+	| @else "else"
 ;

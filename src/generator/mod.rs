@@ -6,19 +6,44 @@ use std::rc::Rc;
 
 use crate::lexer::{DFANode, DFANodeE};
 use crate::parser::{
-    Element, ElementE, Elements, LexerRule, Production, Productions, Rule, SharedElement,
+    Element, ElementE, Elements, LexerRule, NonTerminal, Production, Productions, Rule,
+    SharedElement,
 };
 use crate::regex2dfa;
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct Derivative {
-    pub non_terminal: String,
+    pub non_terminal_element: Rc<RefCell<Element>>,
     pub rule: Rule,
 }
 
+impl Hash for Derivative {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let elem = self.non_terminal_element.borrow();
+        elem.pos.hash(state);
+
+        self.rule.hash(state);
+    }
+}
+
+impl PartialEq for Derivative {
+    fn eq(&self, other: &Self) -> bool {
+        let a = self.non_terminal_element.borrow();
+        let b = other.non_terminal_element.borrow();
+
+        a.pos == b.pos && self.rule == other.rule
+    }
+}
+
+impl Eq for Derivative {}
+
 impl fmt::Display for Derivative {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} -> {}\n", self.non_terminal, self.rule)
+        let non_terminal_value = match &self.non_terminal_element.borrow().element {
+            ElementE::ElementNonTerminal(nt) => nt.value.clone(),
+            _ => unreachable!(),
+        };
+        write!(f, "{} -> {}\n", non_terminal_value, self.rule)
     }
 }
 
@@ -305,8 +330,16 @@ fn augment_production(production: &Production) -> Derivative {
         _ => unreachable!(),
     };
 
+    let non_terminal_element = Rc::new(RefCell::new(Element {
+        element: ElementE::ElementNonTerminal(NonTerminal::new(
+            format!("{}'", non_terminal.value.clone()),
+            non_terminal.pos,
+        )),
+        pos: non_terminal.pos,
+    }));
+
     Derivative {
-        non_terminal: format!("{}'", non_terminal.value.clone()),
+        non_terminal_element,
         rule: Rule {
             annotation: "primary_augmentation".to_string(),
             elements: Elements {
@@ -432,7 +465,7 @@ pub fn construct_fsm(productions: &Productions) -> Rc<RefCell<LRState>> {
 
         for rule in production.rules.ruleset.iter() {
             let derivative = Derivative {
-                non_terminal: non_terminal.clone(),
+                non_terminal_element: Rc::clone(&production.non_terminal_element),
                 rule: Rule {
                     annotation: rule.annotation.clone(),
                     elements: rule.elements.clone(),

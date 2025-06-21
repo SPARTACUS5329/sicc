@@ -29,28 +29,9 @@ fn main() -> Result<(), NiceError> {
     get_first_sets(&mut program.productions);
     get_follow_sets(&mut program.productions);
 
-    let borrowed_program = &program.productions.production_set[0]
-        .non_terminal_element
-        .borrow();
-
-    let non_terminal = match &borrowed_program.element {
-        parser::ElementE::ElementNonTerminal(nt) => nt,
-        _ => unreachable!(),
-    };
-
-    println!(
-        "{} {} {}:",
-        non_terminal.value,
-        non_terminal.nullable,
-        non_terminal.follow.len()
-    );
-
-    for element in &non_terminal.follow {
-        println!("\t{}", element.get_element().borrow());
-    }
-
     let _lexer_root = generator::construct_kmp_dfa(&mut lexer_rules);
     let parser_i0 = generator::construct_fsm(&program.productions);
+    println!("{}", parser_i0.borrow());
     let mut visited: HashSet<i32> = HashSet::new();
     generator::construct_slr_table(Rc::clone(&parser_i0), &mut visited);
 

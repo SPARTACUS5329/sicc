@@ -670,6 +670,13 @@ pub fn find_nullables(productions: &mut Productions) {
         update = false;
         for production in &mut productions.production_set {
             for rule in &production.rules.ruleset {
+                if let ElementE::ElementNonTerminal(nt) =
+                    &production.non_terminal_element.borrow().element
+                {
+                    if nt.nullable {
+                        break;
+                    }
+                }
                 let mut i = 0;
                 let mut is_nullable = true;
 
@@ -688,15 +695,18 @@ pub fn find_nullables(productions: &mut Productions) {
                         }
                     }
 
-                    i += 1;
-                }
-
-                let mut borrowed = production.non_terminal_element.borrow_mut();
-                if let ElementE::ElementNonTerminal(nt) = &mut borrowed.element {
-                    if nt.nullable != is_nullable {
-                        update = true;
-                        nt.nullable = is_nullable;
+                    let mut borrowed = production.non_terminal_element.borrow_mut();
+                    if let ElementE::ElementNonTerminal(nt) = &mut borrowed.element {
+                        if nt.nullable != is_nullable {
+                            update = true;
+                            nt.nullable = is_nullable;
+                        }
+                        if !nt.nullable {
+                            break;
+                        }
                     }
+
+                    i += 1;
                 }
             }
         }
