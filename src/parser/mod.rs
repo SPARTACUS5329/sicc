@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt,
     hash::{Hash, Hasher},
     rc::Rc,
@@ -52,13 +52,40 @@ pub struct Lexeme {
     pub pos: i32,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct NonTerminal {
     pub value: String,
+    pub first: HashSet<SharedElement>,
+    pub follow: HashSet<SharedElement>,
+    pub nullable: bool,
     pub pos: i32,
 }
 
+impl PartialEq for NonTerminal {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Eq for NonTerminal {}
+
+impl Hash for NonTerminal {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+    }
+}
+
 impl NonTerminal {
+    pub fn new(value: String, pos: i32) -> Self {
+        Self {
+            value,
+            first: HashSet::new(),
+            follow: HashSet::new(),
+            nullable: false,
+            pos,
+        }
+    }
+
     fn parse(tokens: Vec<String>, pos: i32) -> Result<NonTerminal, NiceError> {
         let index = pos;
         if (index as usize) >= tokens.len() {
@@ -73,10 +100,7 @@ impl NonTerminal {
             )));
         }
 
-        Ok(NonTerminal {
-            value: non_terminal,
-            pos: index,
-        })
+        Ok(NonTerminal::new(non_terminal, index))
     }
 }
 
@@ -129,20 +153,20 @@ impl fmt::Display for Element {
 }
 
 impl Element {
-    fn parse(tokens: Vec<String>, pos: i32) -> Result<Element, NiceError> {
+    fn parse(tokens: Vec<String>, pos: i32) -> Result<Rc<RefCell<Element>>, NiceError> {
         Terminal::parse(tokens.clone(), pos)
             .and_then(|terminal| {
-                Ok(Element {
+                Ok(Rc::new(RefCell::new(Element {
                     element: ElementE::ElementTerminal(terminal.clone()),
                     pos: terminal.pos,
-                })
+                })))
             })
             .or_else(|_| {
                 NonTerminal::parse(tokens.clone(), pos).and_then(|non_terminal| {
-                    Ok(Element {
+                    Ok(Rc::new(RefCell::new(Element {
                         element: ElementE::ElementNonTerminal(non_terminal.clone()),
                         pos: non_terminal.pos,
-                    })
+                    })))
                 })
             })
             .map_err(|_| NiceError::new("Invalid element".to_string()))
@@ -157,28 +181,59 @@ impl Element {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone)]
+pub struct SharedElement(pub Rc<RefCell<Element>>);
+
+impl PartialEq for SharedElement {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.borrow().eq(&other.0.borrow())
+    }
+}
+impl Eq for SharedElement {}
+
+impl Hash for SharedElement {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.borrow().hash(state)
+    }
+}
+
+impl SharedElement {
+    pub fn get_element(&self) -> &Rc<RefCell<Element>> {
+        return &self.0;
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct Elements {
-    pub element_set: Vec<Element>,
+    pub element_set: Vec<Rc<RefCell<Element>>>,
     pub pos: i32,
 }
 
 impl Elements {
     fn parse(tokens: Vec<String>, pos: i32) -> Result<Elements, NiceError> {
         let mut index = pos;
-        let mut element_set: Vec<Element> = Vec::new();
+        let mut element_set: Vec<Rc<RefCell<Element>>> = Vec::new();
 
         while let Ok(element) = Element::parse(tokens.clone(), index) {
-            element_set.push(element.clone());
-            index = element.pos + 1;
+            element_set.push(Rc::clone(&element));
+            index = element.borrow().pos + 1;
         }
 
-        index = element_set[element_set.len() - 1].pos;
+        index = element_set[element_set.len() - 1].borrow().pos;
 
         Ok(Elements {
             element_set,
             pos: index,
         })
+    }
+}
+
+impl Hash for Elements {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for elem in &self.element_set {
+            elem.borrow().hash(state);
+        }
+        self.pos.hash(state);
     }
 }
 
@@ -197,7 +252,7 @@ impl fmt::Display for Rule {
             if i as i32 == self.pos {
                 write!(f, "• ")?;
             }
-            write!(f, "{} ", element)?;
+            write!(f, "{} ", element.borrow())?;
         }
 
         if self.pos as usize == self.elements.element_set.len() {
@@ -285,7 +340,7 @@ impl Rules {
 
 #[derive(Clone)]
 pub struct Production {
-    pub non_terminal: NonTerminal,
+    pub non_terminal_element: Rc<RefCell<Element>>,
     pub rules: Rules,
     pos: i32,
 }
@@ -308,8 +363,13 @@ impl Production {
             return Err(NiceError::new("Invalid production".to_string()));
         }
 
+        let non_terminal_element = Rc::new(RefCell::new(Element {
+            element: ElementE::ElementNonTerminal(non_terminal.clone()),
+            pos: non_terminal.pos,
+        }));
+
         Ok(Production {
-            non_terminal,
+            non_terminal_element,
             rules,
             pos: index,
         })
@@ -527,18 +587,279 @@ pub fn replace_lexemes(program: &mut Program, lexer_rules: &Vec<LexerRule>) {
     for production in program.productions.production_set.iter_mut() {
         for rule in production.rules.ruleset.iter_mut() {
             for element in rule.elements.element_set.iter_mut() {
-                match &element.element {
-                    ElementE::ElementNonTerminal(non_terminal) => {
-                        if lexemes.contains(&non_terminal.value) {
-                            element.element = ElementE::ElementLexeme(Lexeme {
-                                value: non_terminal.value.clone(),
-                                pos: 0,
-                            });
+                let is_lexeme = {
+                    let borrowed_element = element.borrow();
+                    match &borrowed_element.element {
+                        ElementE::ElementNonTerminal(non_terminal) => {
+                            lexemes.contains(&non_terminal.value)
                         }
+                        _ => false,
                     }
-                    _ => {}
+                };
+
+                if !is_lexeme {
+                    continue;
+                }
+
+                let new_lexeme = {
+                    let borrowed_element = element.borrow();
+                    if let ElementE::ElementNonTerminal(non_terminal) = &borrowed_element.element {
+                        Lexeme {
+                            value: non_terminal.value.clone(),
+                            pos: 0,
+                        }
+                    } else {
+                        continue;
+                    }
+                };
+
+                element.borrow_mut().element = ElementE::ElementLexeme(new_lexeme);
+            }
+        }
+    }
+}
+
+pub fn unify_elements(productions: &mut Productions) {
+    let mut element_map: HashMap<NonTerminal, Rc<RefCell<Element>>> = HashMap::new();
+
+    for production in &mut productions.production_set {
+        let new_element = match &production.non_terminal_element.borrow().element {
+            ElementE::ElementNonTerminal(nt) => {
+                if let Some(existing_element) = element_map.get(&nt) {
+                    Some(Rc::clone(&existing_element))
+                } else {
+                    element_map.insert(nt.clone(), Rc::clone(&production.non_terminal_element));
+                    None
                 }
             }
+            _ => None,
+        };
+
+        if let Some(existing_element) = new_element {
+            production.non_terminal_element = existing_element;
+        }
+
+        for rule in &mut production.rules.ruleset {
+            for element in &mut rule.elements.element_set {
+                let maybe_new = {
+                    let borrowed = element.borrow();
+                    match &borrowed.element {
+                        ElementE::ElementNonTerminal(nt) => {
+                            if let Some(existing_element) = element_map.get(&nt) {
+                                Some(Rc::clone(existing_element))
+                            } else {
+                                element_map.insert(nt.clone(), Rc::clone(&element));
+                                None
+                            }
+                        }
+                        _ => None,
+                    }
+                };
+
+                if let Some(new_element) = maybe_new {
+                    *element = new_element;
+                }
+            }
+        }
+    }
+}
+
+pub fn find_nullables(productions: &mut Productions) {
+    let mut update: bool;
+    loop {
+        update = false;
+        for production in &mut productions.production_set {
+            for rule in &production.rules.ruleset {
+                let mut i = 0;
+                let mut is_nullable = true;
+
+                while is_nullable && i < rule.elements.element_set.len() {
+                    let element = &rule.elements.element_set[i];
+
+                    match &element.borrow().element {
+                        ElementE::ElementTerminal(terminal) => {
+                            is_nullable = terminal.value == "eps";
+                        }
+                        ElementE::ElementLexeme(_) => {
+                            is_nullable = false;
+                        }
+                        ElementE::ElementNonTerminal(nt) => {
+                            is_nullable = nt.nullable;
+                        }
+                    }
+
+                    i += 1;
+                }
+
+                let mut borrowed = production.non_terminal_element.borrow_mut();
+                if let ElementE::ElementNonTerminal(nt) = &mut borrowed.element {
+                    if nt.nullable != is_nullable {
+                        update = true;
+                        nt.nullable = is_nullable;
+                    }
+                }
+            }
+        }
+
+        if !update {
+            break;
+        }
+    }
+}
+
+pub fn get_first_sets(productions: &mut Productions) {
+    let mut update: bool;
+    loop {
+        update = false;
+        for production in &mut productions.production_set {
+            for rule in &production.rules.ruleset {
+                let mut i = 0;
+                let mut is_nullable = true;
+
+                while is_nullable && i < rule.elements.element_set.len() {
+                    let element = &rule.elements.element_set[i];
+
+                    let mut extend_set: Option<HashSet<SharedElement>> = None;
+                    let mut is_non_terminal = false;
+
+                    match &element.borrow().element {
+                        ElementE::ElementTerminal(_) | ElementE::ElementLexeme(_) => {
+                            is_nullable = false;
+                            let mut borrowed = production.non_terminal_element.borrow_mut();
+
+                            if let ElementE::ElementNonTerminal(nt) = &mut borrowed.element {
+                                let len_before = nt.first.len();
+                                nt.first.insert(SharedElement(Rc::clone(element)));
+                                let len_after = nt.first.len();
+                                update = len_before != len_after;
+                            }
+                        }
+
+                        ElementE::ElementNonTerminal(element_non_terminal) => {
+                            extend_set = Some(element_non_terminal.first.clone());
+                            is_non_terminal = true;
+                        }
+                    }
+
+                    if is_non_terminal && extend_set.is_some() {
+                        let mut borrowed = production.non_terminal_element.borrow_mut();
+
+                        if let ElementE::ElementNonTerminal(nt) = &mut borrowed.element {
+                            let len_before = nt.first.len();
+                            nt.first.extend(extend_set.expect("Extend set not found"));
+                            let len_after = nt.first.len();
+                            update = len_before != len_after;
+                            is_nullable = nt.nullable;
+                        }
+                    }
+
+                    i += 1;
+                }
+            }
+        }
+
+        if !update {
+            break;
+        }
+    }
+}
+
+pub fn get_follow_sets(productions: &mut Productions) {
+    let mut update: bool;
+
+    loop {
+        update = false;
+
+        for production in &mut productions.production_set {
+            for rule in &mut production.rules.ruleset {
+                let rule_length = rule.elements.element_set.len();
+
+                for i in (0..rule_length).rev() {
+                    let mut j = i + 1;
+
+                    while j < rule_length {
+                        let extend_set: HashSet<SharedElement>;
+
+                        match &rule.elements.element_set[j].borrow().element {
+                            ElementE::ElementTerminal(_) | ElementE::ElementLexeme(_) => {
+                                let mutable_element =
+                                    &mut rule.elements.element_set[i].borrow_mut();
+                                let non_terminal = match &mut mutable_element.element {
+                                    ElementE::ElementNonTerminal(nt) => nt,
+                                    _ => {
+                                        j += 1;
+                                        continue;
+                                    }
+                                };
+
+                                let len_before_extend = non_terminal.follow.len();
+                                non_terminal.follow.insert(SharedElement(Rc::clone(
+                                    &rule.elements.element_set[j],
+                                )));
+
+                                let len_after_extend = non_terminal.follow.len();
+                                update = len_before_extend != len_after_extend;
+                                break;
+                            }
+                            ElementE::ElementNonTerminal(nt) => {
+                                extend_set = nt.first.clone();
+                            }
+                        }
+
+                        let mutable_element = &mut rule.elements.element_set[i].borrow_mut();
+                        let non_terminal = match &mut mutable_element.element {
+                            ElementE::ElementNonTerminal(nt) => nt,
+                            _ => {
+                                j += 1;
+                                continue;
+                            }
+                        };
+
+                        let len_before_extend = non_terminal.follow.len();
+                        non_terminal.follow.extend(extend_set);
+                        let len_after_extend = non_terminal.follow.len();
+                        update = len_before_extend != len_after_extend;
+
+                        if !non_terminal.nullable {
+                            break;
+                        }
+
+                        j += 1;
+                    }
+
+                    if j == rule_length
+                        && !Rc::ptr_eq(
+                            &production.non_terminal_element,
+                            &rule.elements.element_set[i],
+                        )
+                    {
+                        let mutable_element = &mut rule.elements.element_set[i].borrow_mut();
+                        let non_terminal = match &mut mutable_element.element {
+                            ElementE::ElementNonTerminal(nt) => nt,
+                            _ => continue,
+                        };
+
+                        let borrowed_production_non_terminal_element =
+                            production.non_terminal_element.borrow();
+                        let production_non_terminal =
+                            match &borrowed_production_non_terminal_element.element {
+                                ElementE::ElementNonTerminal(nt) => nt,
+                                _ => unreachable!(),
+                            };
+
+                        let len_before_extend = non_terminal.follow.len();
+                        non_terminal
+                            .follow
+                            .extend(production_non_terminal.follow.clone());
+                        let len_after_extend = non_terminal.follow.len();
+                        update = len_before_extend != len_after_extend;
+                    }
+                }
+            }
+        }
+
+        if !update {
+            break;
         }
     }
 }

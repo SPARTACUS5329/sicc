@@ -5,7 +5,9 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 
 use crate::lexer::{DFANode, DFANodeE};
-use crate::parser::{Element, ElementE, Elements, LexerRule, Production, Productions, Rule};
+use crate::parser::{
+    Element, ElementE, Elements, LexerRule, Production, Productions, Rule, SharedElement,
+};
 use crate::regex2dfa;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -24,8 +26,8 @@ impl fmt::Display for Derivative {
 pub struct LRState {
     pub id: i32,
     pub derivatives: HashSet<Derivative>,
-    pub next: HashMap<Element, Rc<RefCell<LRState>>>,
-    pub slr_rules: HashMap<Element, Vec<SLRRuleE>>,
+    pub next: HashMap<SharedElement, Rc<RefCell<LRState>>>,
+    pub slr_rules: HashMap<SharedElement, Vec<SLRRuleE>>,
 }
 
 impl fmt::Display for LRState {
@@ -95,7 +97,13 @@ impl LRState {
         // Print transitions
         for (element, next_state) in &self.next {
             let next_id = next_state.borrow().id;
-            writeln!(f, "    {} -> {} [label=\"{}\"];", self.id, next_id, element)?;
+            writeln!(
+                f,
+                "    {} -> {} [label=\"{}\"];",
+                self.id,
+                next_id,
+                element.get_element().borrow()
+            )?;
 
             // Recursively print connected states
             next_state.borrow().print_state(f, visited)?;
@@ -291,15 +299,21 @@ pub fn construct_kmp_dfa(lexer_rules: &mut Vec<LexerRule>) -> Rc<RefCell<DFANode
 }
 
 fn augment_production(production: &Production) -> Derivative {
+    let borrowed_production_non_terminal_element = production.non_terminal_element.borrow();
+    let non_terminal = match &borrowed_production_non_terminal_element.element {
+        ElementE::ElementNonTerminal(nt) => nt,
+        _ => unreachable!(),
+    };
+
     Derivative {
-        non_terminal: format!("{}'", production.non_terminal.value.clone()),
+        non_terminal: format!("{}'", non_terminal.value.clone()),
         rule: Rule {
             annotation: "primary_augmentation".to_string(),
             elements: Elements {
-                element_set: vec![Element {
-                    element: ElementE::ElementNonTerminal(production.non_terminal.clone()),
+                element_set: vec![Rc::new(RefCell::new(Element {
+                    element: ElementE::ElementNonTerminal(non_terminal.clone()),
                     pos: 0,
-                }],
+                }))],
                 pos: 0,
             },
             pos: 0,
@@ -308,12 +322,12 @@ fn augment_production(production: &Production) -> Derivative {
 }
 
 fn get_kernel_items(
-    element: Element,
+    element: Rc<RefCell<Element>>,
     directive_map: &HashMap<String, Vec<Derivative>>,
 ) -> Vec<Derivative> {
-    let non_terminal = match element.element {
+    let non_terminal = match &element.borrow().element {
         ElementE::ElementTerminal(_) | ElementE::ElementLexeme(_) => return Vec::new(),
-        ElementE::ElementNonTerminal(non_terminal) => non_terminal.value,
+        ElementE::ElementNonTerminal(non_terminal) => non_terminal.value.clone(),
     };
 
     let derivatives: Vec<Derivative> = directive_map
@@ -333,7 +347,7 @@ fn fill_kernel(state: Rc<RefCell<LRState>>, directive_map: &HashMap<String, Vec<
         for derivative in state.borrow().derivatives.iter() {
             let index = derivative.rule.pos;
             if let Some(element) = derivative.rule.elements.element_set.get(index as usize) {
-                let new_derivatives = get_kernel_items(element.clone(), directive_map);
+                let new_derivatives = get_kernel_items(Rc::clone(&element), directive_map);
                 derivatives.extend(new_derivatives);
             }
         }
@@ -362,7 +376,7 @@ fn construct_state(
     }
 
     let mut next_derivatives_map: HashMap<String, Vec<Derivative>> = HashMap::new();
-    let mut element_map: HashMap<String, Element> = HashMap::new();
+    let mut element_map: HashMap<String, Rc<RefCell<Element>>> = HashMap::new();
 
     for derivative in state.borrow().derivatives.iter() {
         let element = match derivative
@@ -378,11 +392,11 @@ fn construct_state(
         };
 
         next_derivatives_map
-            .entry(element.get_value())
+            .entry(element.borrow().get_value())
             .or_insert_with(|| {
                 element_map
-                    .entry(element.get_value())
-                    .or_insert(element.clone());
+                    .entry(element.borrow().get_value())
+                    .or_insert(Rc::clone(&element));
                 Vec::new()
             })
             .push(derivative.clone());
@@ -398,17 +412,24 @@ fn construct_state(
             next_derivative.rule.pos += 1;
         }
         let next_state = construct_state(next_derivatives, derivative_map, states, node_count);
-        state.borrow_mut().next.insert(element.clone(), next_state);
+        state
+            .borrow_mut()
+            .next
+            .insert(SharedElement(Rc::clone(&element)), next_state);
     }
 
     state
 }
 
-pub fn construct_fsm(productions: Productions) -> Rc<RefCell<LRState>> {
+pub fn construct_fsm(productions: &Productions) -> Rc<RefCell<LRState>> {
     let mut derivative_map: HashMap<String, Vec<Derivative>> = HashMap::new();
 
     for production in productions.production_set.iter() {
-        let non_terminal = production.non_terminal.value.clone();
+        let non_terminal = match &production.non_terminal_element.borrow().element {
+            ElementE::ElementNonTerminal(nt) => nt.value.clone(),
+            _ => unreachable!(),
+        };
+
         for rule in production.rules.ruleset.iter() {
             let derivative = Derivative {
                 non_terminal: non_terminal.clone(),

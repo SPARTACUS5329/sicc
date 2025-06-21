@@ -7,3 +7,7 @@ exp ->
 	| @minus exp "-" exp
 	| @value NUMBER
 ;
+
+sample ->
+	@eps "eps"
+;
