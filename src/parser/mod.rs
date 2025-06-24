@@ -684,14 +684,11 @@ pub fn find_nullables(productions: &mut Productions) {
                     let element = &rule.elements.element_set[i];
 
                     match &element.borrow().element {
-                        ElementE::ElementTerminal(terminal) => {
-                            is_nullable = terminal.value == "eps";
-                        }
-                        ElementE::ElementLexeme(_) => {
+                        ElementE::ElementTerminal(_) | ElementE::ElementLexeme(_) => {
                             is_nullable = false;
                         }
                         ElementE::ElementNonTerminal(nt) => {
-                            is_nullable = nt.nullable;
+                            is_nullable = nt.nullable || nt.value == "eps";
                         }
                     }
 
