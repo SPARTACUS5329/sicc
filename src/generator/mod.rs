@@ -1,8 +1,10 @@
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt;
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::fs::File;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io::{BufWriter, Write};
 use std::rc::Rc;
+use std::{fmt, usize};
 
 use crate::lexer::{DFANode, DFANodeE};
 use crate::parser::{
@@ -11,6 +13,8 @@ use crate::parser::{
 };
 use crate::regex2dfa;
 
+// The position of "." for each rule is rule.pos
+// rule.pos ranges from 0 to rule.elements.element_set.len()
 #[derive(Clone)]
 pub struct Derivative {
     pub non_terminal_element: Rc<RefCell<Element>>,
@@ -153,6 +157,20 @@ pub enum SLRRuleE {
     SLRRuleShift(SLRShift),
     SLRRuleReduce(SLRReduce),
     SLRRuleAccept,
+}
+
+impl fmt::Display for SLRRuleE {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SLRRuleE::SLRRuleShift(SLRShift { next_state }) => {
+                write!(f, "s{}", next_state.borrow().id)
+            }
+            SLRRuleE::SLRRuleReduce(SLRReduce { derivative }) => {
+                write!(f, "{}", derivative.rule)
+            }
+            SLRRuleE::SLRRuleAccept => write!(f, "acc"),
+        }
+    }
 }
 
 fn augment_node(
@@ -330,11 +348,20 @@ fn augment_production(production: &Production) -> Derivative {
         _ => unreachable!(),
     };
 
+    let mut new_non_terminal =
+        NonTerminal::new(format!("{}'", non_terminal.value.clone()), non_terminal.pos);
+
+    let end_of_parse = Rc::new(RefCell::new(Element {
+        element: ElementE::ElementNonTerminal(NonTerminal::new("$".to_string(), 0)),
+        pos: 0,
+    }));
+
+    new_non_terminal
+        .follow
+        .insert(SharedElement(Rc::clone(&end_of_parse)));
+
     let non_terminal_element = Rc::new(RefCell::new(Element {
-        element: ElementE::ElementNonTerminal(NonTerminal::new(
-            format!("{}'", non_terminal.value.clone()),
-            non_terminal.pos,
-        )),
+        element: ElementE::ElementNonTerminal(new_non_terminal),
         pos: non_terminal.pos,
     }));
 
@@ -356,22 +383,32 @@ fn augment_production(production: &Production) -> Derivative {
 
 fn get_kernel_items(
     element: Rc<RefCell<Element>>,
-    directive_map: &HashMap<String, Vec<Derivative>>,
+    derivative_map: &HashMap<String, Vec<Derivative>>,
 ) -> Vec<Derivative> {
     let non_terminal = match &element.borrow().element {
         ElementE::ElementTerminal(_) | ElementE::ElementLexeme(_) => return Vec::new(),
         ElementE::ElementNonTerminal(non_terminal) => non_terminal.value.clone(),
     };
 
-    let derivatives: Vec<Derivative> = directive_map
+    let mut derivatives: Vec<Derivative> = derivative_map
         .get(&non_terminal)
-        .expect(format!("No derivative found for non terminal {}", non_terminal).as_str())
+        .expect(format!("no derivative found for non terminal {}", non_terminal).as_str())
         .to_vec();
+
+    for derivative in &mut derivatives {
+        if let ElementE::ElementNonTerminal(nt) =
+            &derivative.rule.elements.element_set[0].borrow().element
+        {
+            if nt.value == "eps" {
+                derivative.rule.pos = 1;
+            }
+        }
+    }
 
     derivatives
 }
 
-fn fill_kernel(state: Rc<RefCell<LRState>>, directive_map: &HashMap<String, Vec<Derivative>>) {
+fn fill_kernel(state: Rc<RefCell<LRState>>, derivative_map: &HashMap<String, Vec<Derivative>>) {
     let mut old_len = state.borrow().derivatives.len();
 
     loop {
@@ -380,7 +417,7 @@ fn fill_kernel(state: Rc<RefCell<LRState>>, directive_map: &HashMap<String, Vec<
         for derivative in state.borrow().derivatives.iter() {
             let index = derivative.rule.pos;
             if let Some(element) = derivative.rule.elements.element_set.get(index as usize) {
-                let new_derivatives = get_kernel_items(Rc::clone(&element), directive_map);
+                let new_derivatives = get_kernel_items(Rc::clone(&element), derivative_map);
                 derivatives.extend(new_derivatives);
             }
         }
@@ -496,6 +533,7 @@ pub fn construct_slr_table(state: Rc<RefCell<LRState>>, visited: &mut HashSet<i3
 
     let next_entries = state.borrow_mut().next.clone();
 
+    // Shift rules
     for (element, next_state) in next_entries {
         state
             .borrow_mut()
@@ -507,7 +545,114 @@ pub fn construct_slr_table(state: Rc<RefCell<LRState>>, visited: &mut HashSet<i3
             }));
     }
 
+    // Reduce rules
+    let derivatives: Vec<Derivative> = state.borrow().derivatives.iter().cloned().collect();
+
+    for derivative in derivatives {
+        let is_reducable =
+            derivative.rule.pos as usize == derivative.rule.elements.element_set.len();
+
+        if !is_reducable {
+            continue;
+        }
+
+        let borrowed_non_terminal = derivative.non_terminal_element.borrow();
+        let production_non_terminal_element = match &borrowed_non_terminal.element {
+            ElementE::ElementNonTerminal(nt) => nt,
+            _ => unreachable!(),
+        };
+
+        for element in &production_non_terminal_element.follow {
+            state
+                .borrow_mut()
+                .slr_rules
+                .entry(element.clone())
+                .or_insert_with(Vec::new)
+                .push({
+                    if derivative.rule.annotation == "primary_augmentation" {
+                        SLRRuleE::SLRRuleAccept
+                    } else {
+                        SLRRuleE::SLRRuleReduce(SLRReduce {
+                            derivative: derivative.clone(),
+                        })
+                    }
+                });
+        }
+    }
+
+    // DFS for next states
     for (_element, next_state) in &state.borrow().next {
         construct_slr_table(Rc::clone(&next_state), visited);
     }
+}
+
+pub fn print_slr_csv(start_state: &Rc<RefCell<LRState>>) -> Result<(), std::io::Error> {
+    let file = File::create("slr_table.csv")?;
+    let mut out = BufWriter::new(file);
+
+    let mut visited = HashSet::new(); // visited state IDs
+    let mut queue = VecDeque::new();
+    let mut all_states = Vec::new();
+    let mut all_headers = BTreeSet::new(); // unique terminals/non-terminals across all states
+
+    queue.push_back(Rc::clone(&start_state));
+
+    // Step 1: Traverse the FSM and collect all states and headers
+    while let Some(state_rc) = queue.pop_back() {
+        let state = state_rc.borrow();
+
+        if visited.contains(&state.id) {
+            continue;
+        }
+        visited.insert(state.id);
+        all_states.push(Rc::clone(&state_rc));
+
+        // Add headers from current state's slr_rules
+        for element in state.slr_rules.keys() {
+            all_headers.insert(format!("{}", element.0.borrow()));
+        }
+
+        // DFS on all next transitions
+        for next_state_rc in state.next.values() {
+            queue.push_back(Rc::clone(next_state_rc));
+        }
+    }
+
+    // Step 2: Write header row
+    write!(out, "state_id")?;
+    for header in &all_headers {
+        write!(out, ",{}", header)?;
+    }
+    writeln!(out)?;
+
+    // Step 3: Write rows
+    for state_rc in all_states {
+        let state = state_rc.borrow();
+        write!(out, "{}", state.id)?;
+
+        for header in &all_headers {
+            let rule_opt = state
+                .slr_rules
+                .iter()
+                .find(|(k, _)| format!("{}", k.0.borrow()) == *header);
+
+            if let Some((_, rule_vec)) = rule_opt {
+                let rule_strs: Vec<String> = rule_vec.iter().map(|r| r.to_string()).collect();
+                write!(out, ",{}", rule_strs.join("|"))?;
+            } else {
+                write!(out, ",")?;
+            }
+        }
+
+        writeln!(out)?;
+    }
+
+    Ok(())
+}
+
+pub fn print_lr_fsm(i0: &Rc<RefCell<LRState>>) -> Result<(), std::io::Error> {
+    let file = File::create("graph.txt")?;
+    let mut out = BufWriter::new(file);
+    write!(out, "{}", i0.borrow())?;
+    Ok(())
 }
