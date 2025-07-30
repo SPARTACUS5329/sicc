@@ -1,0 +1,46 @@
+digraph DFA {
+    rankdir=LR;
+    node [shape=circle];
+    0 [label="Node 0 (Start)
+Fail -> 0"];
+    0 -> 6 [label="h"];
+    6 [label="Node 6
+Fail -> 0"];
+    6 -> 7 [label="e"];
+    7 [label="Node 7
+Fail -> 0"];
+    7 -> 8 [label="$"];
+    8 [label="Node 8 (Final)
+Fail -> 0"];
+    7 -> 17 [label="r"];
+    17 [label="Node 17
+Fail -> 0"];
+    17 -> 18 [label="s"];
+    18 [label="Node 18
+Fail -> 1"];
+    18 -> 19 [label="$"];
+    19 [label="Node 19 (Final)
+Fail -> 0"];
+    6 -> 11 [label="i"];
+    11 [label="Node 11
+Fail -> 0"];
+    11 -> 12 [label="s"];
+    12 [label="Node 12
+Fail -> 1"];
+    12 -> 13 [label="$"];
+    13 [label="Node 13 (Final)
+Fail -> 0"];
+    0 -> 1 [label="s"];
+    1 [label="Node 1
+Fail -> 0"];
+    1 -> 2 [label="h"];
+    2 [label="Node 2
+Fail -> 6"];
+    2 -> 3 [label="e"];
+    3 [label="Node 3
+Fail -> 7"];
+    3 -> 4 [label="$"];
+    4 [label="Node 4 (Final)
+Fail -> 8"];
+}
+

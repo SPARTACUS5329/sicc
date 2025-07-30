@@ -1,3 +1,4 @@
-NUMBER: ^%d%s+%S+%.*if$
-LEX2: ^%d%s%Si$
-LEX3: ^%d%s+%S+%.*fi$
+NUMBER: ^she$
+HE: ^he$
+HIS: ^his$
+HERS: ^hers$

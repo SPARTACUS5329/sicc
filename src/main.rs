@@ -1,7 +1,7 @@
 use std::env;
 use std::{collections::HashSet, rc::Rc};
 
-use generator::{print_lr_fsm, print_slr_csv};
+use generator::{compute_kmp_failures, dfa_to_dll};
 use parser::{find_nullables, get_first_sets, get_follow_sets};
 use utils::NiceError;
 mod generator;
@@ -30,21 +30,13 @@ fn main() -> Result<(), NiceError> {
     get_first_sets(&mut program.productions);
     get_follow_sets(&mut program.productions);
 
-    let _lexer_root = generator::construct_kmp_dfa(&mut lexer_rules);
+    let lexer_root = generator::construct_kmp_dfa(&mut lexer_rules);
+    dfa_to_dll(&lexer_root);
+    compute_kmp_failures(&lexer_root);
+
     let parser_i0 = generator::construct_fsm(&program.productions);
     let mut visited: HashSet<i32> = HashSet::new();
     generator::construct_slr_table(Rc::clone(&parser_i0), &mut visited);
-    // let borrow = program.productions.production_set[0]
-    // .non_terminal_element
-    // .borrow();
-    //
-    // if let parser::ElementE::ElementNonTerminal(nt) = &borrow.element {
-    // for element in &nt.follow {
-    // println!("{}", element.0.borrow());
-    // }
-    // }
-    let _ = print_lr_fsm(&parser_i0);
-    let _ = print_slr_csv(&parser_i0);
 
     Ok(())
 }

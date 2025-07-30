@@ -318,6 +318,104 @@ fn merge_dfa_into_trie(trie_head: Rc<RefCell<DFANode>>, rule: &LexerRule, node_c
     }
 }
 
+pub fn dfa_to_dll(root: &Rc<RefCell<DFANode>>) {
+    for (key, node) in root.borrow().next.iter() {
+        if root == node {
+            continue;
+        }
+
+        node.borrow_mut()
+            .back
+            .insert(key.to_string(), Rc::clone(&root));
+        dfa_to_dll(&node);
+    }
+}
+
+fn is_prefix_match(
+    root: &Rc<RefCell<DFANode>>,
+    prefix_list: Vec<String>,
+) -> Option<Rc<RefCell<DFANode>>> {
+    let mut traverse_node = Rc::clone(&root);
+    let mut i = 0;
+
+    while i < prefix_list.len() {
+        let prefix = &prefix_list[i];
+
+        let maybe_next = {
+            let borrowed = traverse_node.borrow();
+            borrowed.next.get(prefix).cloned()
+        };
+
+        if let Some(next_node) = maybe_next {
+            traverse_node = Rc::clone(&next_node);
+            i += 1;
+        } else {
+            return None;
+        }
+    }
+
+    Some(traverse_node)
+}
+
+fn kmp_failure(
+    root: &Rc<RefCell<DFANode>>,
+    node: &Rc<RefCell<DFANode>>,
+    prev_prefix_list: Vec<String>,
+    src: &Rc<RefCell<DFANode>>,
+) {
+    let mut longest_match_node: Option<Rc<RefCell<DFANode>>> = None;
+    let mut failure_length = 0i32;
+    let back_entries: Vec<_> = node
+        .borrow()
+        .back
+        .iter()
+        .map(|(k, v)| (k.clone(), Rc::clone(&v)))
+        .collect();
+
+    for (key, prev_node) in back_entries {
+        // Don't want to match the entire substring as prefix
+        if root == &prev_node {
+            continue;
+        }
+
+        let mut prefix_list = prev_prefix_list.clone();
+
+        prefix_list.insert(0, key.clone());
+        longest_match_node = is_prefix_match(root, prefix_list.to_vec());
+        failure_length = prefix_list.len() as i32;
+        kmp_failure(root, &prev_node, prefix_list, src);
+    }
+
+    let prev_failure_length = src.borrow().failure_length;
+    if longest_match_node.is_some() && failure_length > prev_failure_length {
+        src.borrow_mut().failure = longest_match_node;
+        src.borrow_mut().failure_length = failure_length;
+    }
+}
+
+pub fn compute_kmp_failures(root: &Rc<RefCell<DFANode>>) {
+    let mut visited: HashSet<i32> = HashSet::new();
+    let mut queue: VecDeque<Rc<RefCell<DFANode>>> = VecDeque::new();
+
+    queue.push_back(Rc::clone(root));
+
+    while let Some(node) = queue.pop_front() {
+        kmp_failure(root, &node, Vec::new(), &node);
+        let is_root_failure = node.borrow().failure.is_none();
+
+        if is_root_failure {
+            node.borrow_mut().failure = Some(Rc::clone(&root));
+        }
+
+        for (_key, next_node) in node.borrow().next.iter() {
+            if !visited.contains(&next_node.borrow().id) {
+                visited.insert(next_node.borrow().id);
+                queue.push_back(Rc::clone(next_node));
+            }
+        }
+    }
+}
+
 pub fn construct_kmp_dfa(lexer_rules: &mut Vec<LexerRule>) -> Rc<RefCell<DFANode>> {
     let mut node_count = 0i32;
     let lexer_root = Rc::new(RefCell::new(DFANode::new(

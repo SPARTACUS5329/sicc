@@ -22,6 +22,9 @@ pub struct DFANode {
     pub kind: DFANodeE,
     pub id: i32,
     pub next: HashMap<String, Rc<RefCell<DFANode>>>,
+    pub back: HashMap<String, Rc<RefCell<DFANode>>>,
+    pub failure: Option<Rc<RefCell<DFANode>>>,
+    pub failure_length: i32,
     pub lexeme: Option<Rc<LexerRule>>,
 }
 
@@ -31,6 +34,9 @@ impl DFANode {
             kind,
             id,
             next: HashMap::new(),
+            back: HashMap::new(),
+            failure: None,
+            failure_length: 0,
             lexeme: None,
         }
     }
@@ -73,7 +79,17 @@ impl fmt::Display for DFANode {
             };
 
             // Write node with its style
-            writeln!(f, "    {} [label=\"{}\"];", node.id, node_label)?;
+            writeln!(
+                f,
+                "    {} [label=\"{}\nFail -> {}\"];",
+                node.id,
+                node_label,
+                node.failure
+                    .as_ref()
+                    .expect("Failure function not found")
+                    .borrow()
+                    .id
+            )?;
 
             // Recurse through and draw edges
             for (transition, next_node) in &node.next {
