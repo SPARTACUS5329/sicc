@@ -1,0 +1,11 @@
+#pragma once
+
+#define MAX_ANNOTATION_LENGTH 200
+#define MAX_ELEMENTS_IN_RULE 10
+#define MAX_TERMINAL_SIZE 100
+#define MAX_RULES_IN_STATE 50
+#define MAX_ELEMENTS 2000
+#define MAP_SIZE 5000
+
+#define MAX_LEXER_NODES 4
+#define MAX_LEXEMES 3
