@@ -143,3 +143,4 @@ void insertSymbol(char *key, void *data, symbol_table_item_t *hashTable[],
 void failureNode(lexeme_t *currLexeme, char *currTerminal, int *numElements,
                  element_t **elements, dfa_node_t *node, dfa_node_t *root,
                  char ch, int *inputIndex, int *strIndex, char *contents);
+void error(const char *msg);

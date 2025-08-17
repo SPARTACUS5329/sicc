@@ -288,20 +288,20 @@ int main() {
 
   element_set_t *elementSet = lex(contents);
 
-  for (int i = 0; i < elementSet->numElements; i++) {
-    element_t *element = elementSet->elements[i];
-    switch (element->type) {
-    case ELEMENT_LEXEME:
-      printf("Lexeme: %s\n", element->element.lexeme->value);
-      break;
-    case ELEMENT_TERMINAL:
-      printf("Terminal: %s\n", element->element.terminal->value);
-      break;
-    case ELEMENT_NON_TERMINAL:
-      printf("NonTerminal: %s\n", element->element.non_terminal->value);
-      break;
-    }
-  }
+  // for (int i = 0; i < elementSet->numElements; i++) {
+  // element_t *element = elementSet->elements[i];
+  // switch (element->type) {
+  // case ELEMENT_LEXEME:
+  // printf("Lexeme: %s\n", element->element.lexeme->value);
+  // break;
+  // case ELEMENT_TERMINAL:
+  // printf("Terminal: %s\n", element->element.terminal->value);
+  // break;
+  // case ELEMENT_NON_TERMINAL:
+  // printf("NonTerminal: %s\n", element->element.non_terminal->value);
+  // break;
+  // }
+  // }
 
   return 0;
 }
