@@ -1,5 +1,6 @@
 #include "lr.h"
 #include "constants.h"
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,7 +8,10 @@
 #include <strings.h>
 
 dfa_node_t *lexerNodeMap[MAX_LEXER_NODES];
+lr_state_t *parserStateMap[MAX_PARSER_STATES];
 symbol_table_item_t *lexemeMap[MAP_SIZE];
+symbol_table_item_t *terminalMap[MAP_SIZE];
+symbol_table_item_t *nonTerminalMap[MAP_SIZE];
 
 dfa_node_t *createLexerNode(dfa_node_e kind, int id, int failurePrefixLength) {
   dfa_node_t *node = (dfa_node_t *)calloc(1, sizeof(dfa_node_t));
@@ -40,14 +44,13 @@ void addFailureNodes() {
 }
 
 void addLexemesToLexerNodes() {
-  char lexemes[MAX_LEXER_NODES][MAX_TERMINAL_SIZE] = {"", "", "", "she"};
+  char lexemes[MAX_LEXER_NODES][MAX_TERMINAL_SIZE] = {"", "", "", "SHE"};
 
   for (int i = 0; i < MAX_LEXER_NODES; i++) {
     if (lexemes[i][0] == '\0')
       continue;
 
-    symbol_table_item_t *item =
-        searchSymbol(lexemes[i], lexemeMap, MAX_LEXEMES);
+    symbol_table_item_t *item = searchSymbol(lexemes[i], lexemeMap, MAP_SIZE);
 
     if (item == NULL) {
       printf("[addLexemesToLexerNodes] Unexpected Error: Lexeme not found: %s",
@@ -55,7 +58,8 @@ void addLexemesToLexerNodes() {
       continue;
     }
 
-    lexeme_t *lexeme = (lexeme_t *)item->data;
+    element_t *element = (element_t *)item->data;
+    lexeme_t *lexeme = element->element.lexeme;
     dfa_node_t *node = lexerNodeMap[i];
     node->lexeme = lexeme;
   }
@@ -81,12 +85,47 @@ void addLexerTrieEdges() {
 }
 
 void initLexemes() {
-  char lexemes[MAX_LEXEMES][MAX_TERMINAL_SIZE] = {"she"};
+  char lexemes[MAX_LEXEMES][MAX_TERMINAL_SIZE] = {"SHE"};
 
   for (int i = 0; i < MAX_LEXEMES; i++) {
     lexeme_t *lexeme = (lexeme_t *)calloc(1, sizeof(lexeme_t));
     strcpy(lexeme->value, lexemes[i]);
-    insertSymbol(lexeme->value, lexeme, lexemeMap, MAX_LEXEMES);
+    element_t *element = (element_t *)calloc(1, sizeof(element_t));
+    element->type = ELEMENT_LEXEME;
+    element->element.lexeme = lexeme;
+    insertSymbol(lexeme->value, element, lexemeMap, MAP_SIZE);
+  }
+}
+
+void initTerminals() {
+  char terminals[MAX_TERMINALS][MAX_TERMINAL_SIZE] = {"good", "bad", " ", "is"};
+
+  for (int i = 0; i < MAX_TERMINALS; i++) {
+    terminal_t *terminal = (terminal_t *)calloc(1, sizeof(terminal_t));
+    strcpy(terminal->value, terminals[i]);
+    element_t *element = (element_t *)calloc(1, sizeof(element_t));
+    element->type = ELEMENT_TERMINAL;
+    element->element.terminal = terminal;
+    insertSymbol(terminal->value, element, terminalMap, MAP_SIZE);
+  }
+}
+
+void initNonTerminals() {
+  char nonTerminals[MAX_NON_TERMINALS][MAX_TERMINAL_SIZE] = {
+      "sentence", "condition", "condition_good", "condition_bad"};
+  non_terminal_e nonTerminalTypes[MAX_NON_TERMINALS] = {
+      NON_TERMINAL_SENTENCE, NON_TERMINAL_CONDITION,
+      NON_TERMINAL_CONDITION_GOOD, NON_TERMINAL_CONDITION_BAD};
+
+  for (int i = 0; i < MAX_NON_TERMINALS; i++) {
+    non_terminal_t *nonTerminal =
+        (non_terminal_t *)calloc(1, sizeof(non_terminal_t));
+    strcpy(nonTerminal->value, nonTerminals[i]);
+    nonTerminal->type = nonTerminalTypes[i];
+    element_t *element = (element_t *)calloc(1, sizeof(element_t));
+    element->type = ELEMENT_NON_TERMINAL;
+    element->element.nonTerminal = nonTerminal;
+    insertSymbol(nonTerminal->value, element, nonTerminalMap, MAP_SIZE);
   }
 }
 
@@ -152,6 +191,15 @@ element_set_t *lex(char *contents) {
     ch = contents[inputIndex];
     sprintf(key, "%c", ch);
     dfa_map_item_t *item = searchLexerNode(key, node->next, MAP_SIZE);
+
+    // Test out regex
+    if (item == NULL) {
+      if (isalpha(ch)) {
+        item = searchLexerNode("%s", node->next, MAP_SIZE);
+      } else if (isdigit(ch)) {
+        item = searchLexerNode("%d", node->next, MAP_SIZE);
+      }
+    }
 
     if (item == NULL) {
       if (currLexeme != NULL) {
@@ -270,38 +318,134 @@ char *readFile(const char *filename) {
   return buffer;
 }
 
+lr_state_t *createParserState(int id) {
+  lr_state_t *state = (lr_state_t *)calloc(1, sizeof(lr_state_t));
+  state->id = id;
+  return state;
+}
+
+void createStateRule(char key[MAX_TERMINAL_SIZE],
+                     symbol_table_item_t **hashTable, int nextState,
+                     rule_table_item_t **ruleTable) {
+  symbol_table_item_t *item = searchSymbol(key, hashTable, MAP_SIZE);
+
+  if (item == NULL) {
+    printf("[createStateRule] Unexpected error: Element not found %s\n", key);
+    error("");
+  }
+
+  element_t *element = (element_t *)item->data;
+  slr_rule_shift_t *shiftRule =
+      (slr_rule_shift_t *)calloc(1, sizeof(slr_rule_shift_t));
+  slr_rule_t *rule = (slr_rule_t *)calloc(1, sizeof(slr_rule_t));
+  rule->type = SLR_RULE_SHIFT;
+  rule->rule.shift = shiftRule;
+  shiftRule->next_state = nextState;
+  insertSLRRule(element, rule, ruleTable, 3 * MAX_RULES_IN_STATE);
+}
+
+void initParserStates() {
+  lr_state_t *state;
+  int states[MAX_PARSER_STATES] = {0, 1, 2, 3, 4, 5, 6, 7, 8, -1};
+
+  char lexemeShiftRulesKeys[MAX_PARSER_STATES][MAX_PARSER_STATES]
+                           [MAX_TERMINAL_SIZE] = {{"SHE"}, {}, {}, {},
+                                                  {},      {}, {}, {}};
+  int lexemeShiftRulesStates[MAX_PARSER_STATES][MAX_PARSER_STATES] = {
+      {1}, {}, {}, {}, {}, {}, {}, {}, {}};
+
+  char terminalShiftRulesKeys[MAX_PARSER_STATES][MAX_PARSER_STATES]
+                             [MAX_TERMINAL_SIZE] = {
+                                 {}, {" "}, {"is"}, {" "}, {"good", "bad"},
+                                 {}, {},    {},     {}};
+  int terminalShiftRulesStates[MAX_PARSER_STATES][MAX_PARSER_STATES] = {
+      {}, {2}, {3}, {4}, {5, 6}, {}, {}, {}, {}};
+
+  char nonTerminalShiftRulesKeys[MAX_PARSER_STATES][MAX_PARSER_STATES]
+                                [MAX_TERMINAL_SIZE] = {
+                                    {"sentence"}, {}, {}, {}, {"condition"},
+                                    {},           {}, {}, {}};
+  int nonTerminalShiftRulesStates[MAX_PARSER_STATES][MAX_PARSER_STATES] = {
+      {8}, {}, {}, {}, {7}, {}, {}, {}, {}};
+
+  char *key = (char *)calloc(MAX_TERMINAL_SIZE, sizeof(char));
+  for (int i = 0; states[i] != -1; i++) {
+    state = createParserState(states[i]);
+
+    for (int j = 0; j < MAX_PARSER_STATES; j++) {
+      key = lexemeShiftRulesKeys[i][j];
+      if (key[0] == '\0')
+        break;
+
+      int nextState = lexemeShiftRulesStates[i][j];
+
+      createStateRule(key, lexemeMap, nextState, state->ruleTable);
+    }
+
+    for (int j = 0; j < MAX_PARSER_STATES; j++) {
+      key = terminalShiftRulesKeys[i][j];
+      if (key[0] == '\0')
+        break;
+
+      int nextState = terminalShiftRulesStates[i][j];
+
+      createStateRule(key, terminalMap, nextState, state->ruleTable);
+    }
+
+    for (int j = 0; j < MAX_PARSER_STATES; j++) {
+      key = nonTerminalShiftRulesKeys[i][j];
+      if (key[0] == '\0')
+        break;
+
+      int nextState = nonTerminalShiftRulesStates[i][j];
+
+      createStateRule(key, nonTerminalMap, nextState, state->ruleTable);
+    }
+
+    parserStateMap[states[i]] = state;
+  }
+}
+
 void error(const char *msg) {
   perror(msg);
   exit(1);
 }
 
+void printElements(element_set_t *elementSet) {
+  for (int i = 0; i < elementSet->numElements; i++) {
+    element_t *element = elementSet->elements[i];
+    switch (element->type) {
+    case ELEMENT_LEXEME:
+      printf("Lexeme: %s\n", element->element.lexeme->value);
+      break;
+    case ELEMENT_TERMINAL:
+      printf("Terminal: %s\n", element->element.terminal->value);
+      break;
+    case ELEMENT_NON_TERMINAL:
+      printf("NonTerminal: %s\n", element->element.nonTerminal->value);
+      break;
+    }
+  }
+}
+
 int main() {
   initLexemes();
+  initTerminals();
+  initNonTerminals();
+
   initLexerNodes();
   addFailureNodes();
   addLexerTrieEdges();
   addLexemesToLexerNodes();
+
+  initParserStates();
 
   char *contents = readFile("./sample.txt");
   if (!contents)
     error("Error in reading input file");
 
   element_set_t *elementSet = lex(contents);
-
-  // for (int i = 0; i < elementSet->numElements; i++) {
-  // element_t *element = elementSet->elements[i];
-  // switch (element->type) {
-  // case ELEMENT_LEXEME:
-  // printf("Lexeme: %s\n", element->element.lexeme->value);
-  // break;
-  // case ELEMENT_TERMINAL:
-  // printf("Terminal: %s\n", element->element.terminal->value);
-  // break;
-  // case ELEMENT_NON_TERMINAL:
-  // printf("NonTerminal: %s\n", element->element.non_terminal->value);
-  // break;
-  // }
-  // }
+  // printElements(elementSet);
 
   return 0;
 }
@@ -347,6 +491,57 @@ void insertLexerNode(char *key, dfa_node_t *node, dfa_map_item_t *hashTable[],
   item->node = node;
   item->key = hashIndex;
   strcpy(item->edge, key);
+
+  while (hashTable[hashIndex] != NULL) {
+    ++hashIndex;
+    hashIndex %= size;
+  }
+
+  hashTable[hashIndex] = item;
+}
+
+int hashElement(element_t *e, int size) {
+  // element hashTable is partitioned into 3
+  switch (e->type) {
+  case ELEMENT_LEXEME:
+    return hash(e->element.lexeme->value, size);
+  case ELEMENT_TERMINAL:
+    return size + hash(e->element.terminal->value, size);
+  case ELEMENT_NON_TERMINAL:
+    return 2 * size + hash(e->element.nonTerminal->value, size);
+  }
+}
+
+rule_table_item_t *searchSLRRule(element_t *key, rule_table_item_t *hashTable[],
+                                 int size) {
+  if (size == 0)
+    return NULL;
+
+  int hashIndex = hashElement(key, size);
+
+  while (hashTable[hashIndex] != NULL) {
+    if (hashTable[hashIndex]->key == hashIndex)
+      return hashTable[hashIndex];
+    ++hashIndex;
+    hashIndex %= size;
+  }
+
+  return NULL;
+}
+
+void insertSLRRule(element_t *key, slr_rule_t *rule,
+                   rule_table_item_t *hashTable[], int size) {
+  rule_table_item_t *item;
+  item = searchSLRRule(key, hashTable, size);
+
+  if (item != NULL)
+    return;
+
+  int hashIndex = hashElement(key, size);
+  item = (rule_table_item_t *)calloc(1, sizeof(dfa_map_item_t));
+
+  item->rule = rule;
+  item->key = hashIndex;
 
   while (hashTable[hashIndex] != NULL) {
     ++hashIndex;

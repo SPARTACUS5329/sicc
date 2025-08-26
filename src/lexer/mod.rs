@@ -130,7 +130,9 @@ pub fn construct_lexer_trie() -> Result<Rc<RefCell<DFANode>>, NiceError> {
     let mut node_map = HashMap::<i32, Rc<RefCell<DFANode>>>::new();
 
     let Ok(lines) = utils::read_lines(&lexer_grammar_filename) else {
-        return Err(NiceError::new("Error in readling lexer grammar file".to_string()));
+        return Err(NiceError::new(
+            "Error in readling lexer grammar file".to_string(),
+        ));
     };
 
     let mut node_count = 0i32;
@@ -154,7 +156,9 @@ pub fn construct_lexer_trie() -> Result<Rc<RefCell<DFANode>>, NiceError> {
 
     for line in lines {
         let Some((node_number, edges)) = line.split_once(":") else {
-            return Err(NiceError::new("Invalid lexer grammar: Cannot read node id".to_string()));
+            return Err(NiceError::new(
+                "Invalid lexer grammar: Cannot read node id".to_string(),
+            ));
         };
         let node_id = match node_number.parse::<i32>() {
             Ok(num) => num,
@@ -171,7 +175,11 @@ pub fn construct_lexer_trie() -> Result<Rc<RefCell<DFANode>>, NiceError> {
             let trimmed_pair = pair.trim();
             let re = Regex::new(r"(?x) \(\s* (.+) \s*,\s* (.+) \s*\) ").unwrap();
             let Some(captures) = re.captures(trimmed_pair) else {
-                return Err(NiceError::new(format!("Invalid lexer grammar: Cannot read graph pairs: {}, {}", node.borrow().id, pair)));
+                return Err(NiceError::new(format!(
+                    "Invalid lexer grammar: Cannot read graph pairs: {}, {}",
+                    node.borrow().id,
+                    pair
+                )));
             };
 
             let char = captures.get(1).map_or("", |m| m.as_str());

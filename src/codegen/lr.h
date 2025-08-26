@@ -10,12 +10,15 @@ typedef struct Element element_t;
 typedef struct Rule rule_t;
 typedef struct Derivative derivative_t;
 typedef struct SLRShift slr_rule_shift_t;
-typedef struct SLRReduce slr_rule_reduce_t;
 typedef struct SLRRule slr_rule_t;
 typedef struct RuleTableItem rule_table_item_t;
 typedef struct LRState lr_state_t;
 typedef struct DFANodeMapItem dfa_map_item_t;
 typedef struct DFANode dfa_node_t;
+typedef struct ConditionGood condition_good_t;
+typedef struct ConditionBad condition_bad_t;
+typedef struct Condition condition_t;
+typedef struct Sentence sentence_t;
 
 typedef enum ElementE {
   ELEMENT_LEXEME,
@@ -31,7 +34,21 @@ typedef struct Terminal {
   char value[MAX_TERMINAL_SIZE];
 } terminal_t;
 
+typedef enum NonTerminalE {
+  NON_TERMINAL_CONDITION_GOOD,
+  NON_TERMINAL_CONDITION_BAD,
+  NON_TERMINAL_CONDITION,
+  NON_TERMINAL_SENTENCE,
+} non_terminal_e;
+
 typedef struct NonTerminal {
+  non_terminal_e type;
+  union {
+    sentence_t *sentence;
+    condition_t *condition;
+    condition_good_t *condition_good;
+    condition_bad_t *condition_bad;
+  } non_terminal;
   char value[MAX_TERMINAL_SIZE];
 } non_terminal_t;
 
@@ -40,7 +57,7 @@ typedef struct Element {
   union {
     lexeme_t *lexeme;
     terminal_t *terminal;
-    non_terminal_t *non_terminal;
+    non_terminal_t *nonTerminal;
   } element;
 } element_t;
 
@@ -49,23 +66,14 @@ typedef struct ElementSet {
   element_t **elements;
 } element_set_t;
 
-typedef struct Rule {
-  char annotation[MAX_ANNOTATION_LENGTH];
-  element_t elements[MAX_ELEMENTS_IN_RULE];
-  int num_elements;
-} rule_t;
-
-typedef struct Derivative {
-  element_t non_terminal_element;
-  rule_t rule;
-} derivative_t;
-
 typedef struct SLRShift {
   int next_state;
 } slr_rule_shift_t;
 
 typedef struct SLRReduce {
-  derivative_t derivative;
+  int num_elements;
+  char annotation[MAX_ANNOTATION_LENGTH];
+  non_terminal_t *non_terminal;
 } slr_rule_reduce_t;
 
 typedef enum SLRRuleE {
@@ -77,8 +85,8 @@ typedef enum SLRRuleE {
 typedef struct SLRRule {
   slr_rule_e type;
   union {
-    slr_rule_shift_t shift;
-    slr_rule_reduce_t reduce;
+    slr_rule_shift_t *shift;
+    slr_rule_reduce_t *reduce;
   } rule;
 } slr_rule_t;
 
@@ -89,7 +97,7 @@ typedef struct RuleTableItem {
 
 typedef struct LRState {
   int id;
-  rule_table_item_t rule_table[2 * MAX_RULES_IN_STATE];
+  rule_table_item_t *ruleTable[3 * MAX_RULES_IN_STATE];
 } lr_state_t;
 
 typedef struct DFANodeMapItem {
@@ -112,6 +120,30 @@ typedef struct DFANode {
   dfa_node_t *failure;
   lexeme_t *lexeme;
 } dfa_node_t;
+
+typedef enum ConditionE { CONDITION_GOOD, CONDITION_BAD } condition_e;
+
+typedef struct ConditionGood {
+  lexeme_t *good;
+} condition_good_t;
+
+typedef struct ConditionBad {
+  lexeme_t *bad;
+} condition_bad_t;
+
+typedef struct Condition {
+  condition_e type;
+  union {
+    condition_good_t *good;
+    condition_bad_t *bad;
+  } condition;
+} condition_t;
+
+typedef struct Sentence {
+  lexeme_t *she;
+  lexeme_t *is;
+  condition_t *condition;
+} sentence_t;
 
 typedef struct SymbolTableItem {
   int key;
@@ -144,3 +176,8 @@ void failureNode(lexeme_t *currLexeme, char *currTerminal, int *numElements,
                  element_t **elements, dfa_node_t *node, dfa_node_t *root,
                  char ch, int *inputIndex, int *strIndex, char *contents);
 void error(const char *msg);
+int hashElement(element_t *e, int size);
+rule_table_item_t *searchSLRRule(element_t *key, rule_table_item_t *hashTable[],
+                                 int size);
+void insertSLRRule(element_t *key, slr_rule_t *rule,
+                   rule_table_item_t *hashTable[], int size);
