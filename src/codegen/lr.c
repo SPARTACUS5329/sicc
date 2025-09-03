@@ -1,5 +1,6 @@
 #include "lr.h"
 #include "constants.h"
+#include <complex.h>
 #include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -98,7 +99,8 @@ void initLexemes() {
 }
 
 void initTerminals() {
-  char terminals[MAX_TERMINALS][MAX_TERMINAL_SIZE] = {"good", "bad", " ", "is"};
+  char terminals[MAX_TERMINALS][MAX_TERMINAL_SIZE] = {"good", "bad", " ", "is",
+                                                      "$"};
 
   for (int i = 0; i < MAX_TERMINALS; i++) {
     terminal_t *terminal = (terminal_t *)calloc(1, sizeof(terminal_t));
@@ -116,12 +118,14 @@ void initNonTerminals() {
   non_terminal_e nonTerminalTypes[MAX_NON_TERMINALS] = {
       NON_TERMINAL_SENTENCE, NON_TERMINAL_CONDITION,
       NON_TERMINAL_CONDITION_GOOD, NON_TERMINAL_CONDITION_BAD};
+  int nonTerminalsSize[MAX_NON_TERMINALS] = {3, 1, 1, 1};
 
   for (int i = 0; i < MAX_NON_TERMINALS; i++) {
     non_terminal_t *nonTerminal =
         (non_terminal_t *)calloc(1, sizeof(non_terminal_t));
     strcpy(nonTerminal->value, nonTerminals[i]);
     nonTerminal->type = nonTerminalTypes[i];
+    nonTerminal->numElements = nonTerminalTypes[i];
     element_t *element = (element_t *)calloc(1, sizeof(element_t));
     element->type = ELEMENT_NON_TERMINAL;
     element->element.nonTerminal = nonTerminal;
@@ -324,24 +328,62 @@ lr_state_t *createParserState(int id) {
   return state;
 }
 
-void createStateRule(char key[MAX_TERMINAL_SIZE],
+void createShiftRule(char key[MAX_TERMINAL_SIZE],
                      symbol_table_item_t **hashTable, int nextState,
                      rule_table_item_t **ruleTable) {
   symbol_table_item_t *item = searchSymbol(key, hashTable, MAP_SIZE);
 
   if (item == NULL) {
-    printf("[createStateRule] Unexpected error: Element not found %s\n", key);
+    printf("[createShiftRule] Unexpected error: Element not found %s\n", key);
     error("");
   }
 
   element_t *element = (element_t *)item->data;
   slr_rule_shift_t *shiftRule =
       (slr_rule_shift_t *)calloc(1, sizeof(slr_rule_shift_t));
+  shiftRule->next_state = nextState;
+
   slr_rule_t *rule = (slr_rule_t *)calloc(1, sizeof(slr_rule_t));
   rule->type = SLR_RULE_SHIFT;
   rule->rule.shift = shiftRule;
-  shiftRule->next_state = nextState;
+
   insertSLRRule(element, rule, ruleTable, 3 * MAX_RULES_IN_STATE);
+}
+
+void createReduceRule(char key[MAX_TERMINAL_SIZE],
+                      char nonTerminal[MAX_TERMINAL_SIZE],
+                      symbol_table_item_t **hashTable,
+                      rule_table_item_t **ruleTable) {
+
+  symbol_table_item_t *item = searchSymbol(key, hashTable, MAP_SIZE);
+
+  if (item == NULL) {
+    printf("[createReduceRule] Unexpected error: Edge element not found %s\n",
+           key);
+    error("");
+  }
+
+  element_t *edgeElement = (element_t *)item->data;
+
+  item = searchSymbol(nonTerminal, nonTerminalMap, MAP_SIZE);
+
+  if (item == NULL) {
+    printf("[createReduceRule] Unexpected error: nonTerminalElement not found "
+           "%s\n",
+           key);
+    error("");
+  }
+
+  element_t *element = (element_t *)item->data;
+  slr_rule_reduce_t *reduceRule =
+      (slr_rule_reduce_t *)calloc(1, sizeof(slr_rule_reduce_t));
+  reduceRule->nonTerminal = element->element.nonTerminal;
+
+  slr_rule_t *rule = (slr_rule_t *)calloc(1, sizeof(slr_rule_t));
+  rule->type = SLR_RULE_REDUCE;
+  rule->rule.reduce = reduceRule;
+
+  insertSLRRule(edgeElement, rule, ruleTable, 3 * MAX_RULES_IN_STATE);
 }
 
 void initParserStates() {
@@ -368,28 +410,61 @@ void initParserStates() {
   int nonTerminalShiftRulesStates[MAX_PARSER_STATES][MAX_PARSER_STATES] = {
       {8}, {}, {}, {}, {7}, {}, {}, {}, {}};
 
+  char lexemeReduceRulesKeys[MAX_PARSER_STATES][MAX_PARSER_STATES]
+                            [MAX_TERMINAL_SIZE] = {{}, {}, {}, {},
+                                                   {}, {}, {}, {}};
+  char lexemeReduceRulesNonTerminals[MAX_PARSER_STATES][MAX_PARSER_STATES]
+                                    [MAX_TERMINAL_SIZE] = {{}, {}, {}, {}, {},
+                                                           {}, {}, {}, {}};
+
+  char terminalReduceRulesKeys[MAX_PARSER_STATES][MAX_PARSER_STATES]
+                              [MAX_TERMINAL_SIZE] = {{},    {},    {}, {}, {},
+                                                     {"$"}, {"$"}, {}, {}};
+  char terminalReduceRulesNonTerminals[MAX_PARSER_STATES][MAX_PARSER_STATES]
+                                      [MAX_TERMINAL_SIZE] = {{},
+                                                             {},
+                                                             {},
+                                                             {},
+                                                             {},
+                                                             {"condition_good"},
+                                                             {"condition_bad"},
+                                                             {},
+                                                             {}};
+
   char *key = (char *)calloc(MAX_TERMINAL_SIZE, sizeof(char));
   for (int i = 0; states[i] != -1; i++) {
     state = createParserState(states[i]);
 
     for (int j = 0; j < MAX_PARSER_STATES; j++) {
       key = lexemeShiftRulesKeys[i][j];
+      if (key[0] != '\0') {
+        int nextState = lexemeShiftRulesStates[i][j];
+
+        createShiftRule(key, lexemeMap, nextState, state->ruleTable);
+      }
+
+      key = lexemeReduceRulesKeys[i][j];
       if (key[0] == '\0')
         break;
 
-      int nextState = lexemeShiftRulesStates[i][j];
-
-      createStateRule(key, lexemeMap, nextState, state->ruleTable);
+      createReduceRule(key, lexemeReduceRulesNonTerminals[i][j], lexemeMap,
+                       state->ruleTable);
     }
 
     for (int j = 0; j < MAX_PARSER_STATES; j++) {
       key = terminalShiftRulesKeys[i][j];
+      if (key[0] != '\0') {
+        int nextState = terminalShiftRulesStates[i][j];
+
+        createShiftRule(key, terminalMap, nextState, state->ruleTable);
+      }
+
+      key = terminalReduceRulesKeys[i][j];
       if (key[0] == '\0')
         break;
 
-      int nextState = terminalShiftRulesStates[i][j];
-
-      createStateRule(key, terminalMap, nextState, state->ruleTable);
+      createReduceRule(key, terminalReduceRulesNonTerminals[i][j], terminalMap,
+                       state->ruleTable);
     }
 
     for (int j = 0; j < MAX_PARSER_STATES; j++) {
@@ -399,7 +474,7 @@ void initParserStates() {
 
       int nextState = nonTerminalShiftRulesStates[i][j];
 
-      createStateRule(key, nonTerminalMap, nextState, state->ruleTable);
+      createShiftRule(key, nonTerminalMap, nextState, state->ruleTable);
     }
 
     parserStateMap[states[i]] = state;
@@ -439,6 +514,15 @@ int main() {
   addLexemesToLexerNodes();
 
   initParserStates();
+
+  lr_state_t *i5 = parserStateMap[5];
+  terminal_t terminal = {"$"};
+  element_t element = {ELEMENT_TERMINAL};
+  element.element.terminal = &terminal;
+  rule_table_item_t *item =
+      searchSLRRule(&element, i5->ruleTable, 3 * MAX_RULES_IN_STATE);
+  slr_rule_reduce_t *rule = item->rule->rule.reduce;
+  printf("%s\n", rule->nonTerminal->value);
 
   char *contents = readFile("./sample.txt");
   if (!contents)

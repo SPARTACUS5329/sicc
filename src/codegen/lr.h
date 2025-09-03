@@ -43,6 +43,7 @@ typedef enum NonTerminalE {
 
 typedef struct NonTerminal {
   non_terminal_e type;
+  int numElements;
   union {
     sentence_t *sentence;
     condition_t *condition;
@@ -71,9 +72,7 @@ typedef struct SLRShift {
 } slr_rule_shift_t;
 
 typedef struct SLRReduce {
-  int num_elements;
-  char annotation[MAX_ANNOTATION_LENGTH];
-  non_terminal_t *non_terminal;
+  non_terminal_t *nonTerminal;
 } slr_rule_reduce_t;
 
 typedef enum SLRRuleE {
