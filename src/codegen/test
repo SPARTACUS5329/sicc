@@ -1,0 +1,4 @@
+#!/bin/bash
+
+clear
+gcc lr.c -o lr && ./lr

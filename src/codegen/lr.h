@@ -7,7 +7,6 @@ typedef struct Lexeme lexeme_t;
 typedef struct Terminal terminal_t;
 typedef struct NonTerminal non_terminal_t;
 typedef struct Element element_t;
-typedef struct Rule rule_t;
 typedef struct Derivative derivative_t;
 typedef struct SLRShift slr_rule_shift_t;
 typedef struct SLRRule slr_rule_t;
@@ -26,6 +25,27 @@ typedef enum ElementE {
   ELEMENT_NON_TERMINAL
 } element_e;
 
+typedef enum NonTerminalE {
+  NON_TERMINAL_CONDITION_GOOD,
+  NON_TERMINAL_CONDITION_BAD,
+  NON_TERMINAL_CONDITION,
+  NON_TERMINAL_SENTENCE,
+} non_terminal_e;
+
+typedef enum SLRRuleE {
+  SLR_RULE_SHIFT,
+  SLR_RULE_REDUCE,
+  SLR_RULE_ACCEPT,
+} slr_rule_e;
+
+typedef enum DFANodeE {
+  DFA_NODE_ROOT,
+  DFA_NODE_TERMINAL,
+  DFA_NODE_REGULAR,
+} dfa_node_e;
+
+typedef enum ConditionE { CONDITION_GOOD, CONDITION_BAD } condition_e;
+
 typedef struct Lexeme {
   char value[MAX_TERMINAL_SIZE];
 } lexeme_t;
@@ -33,13 +53,6 @@ typedef struct Lexeme {
 typedef struct Terminal {
   char value[MAX_TERMINAL_SIZE];
 } terminal_t;
-
-typedef enum NonTerminalE {
-  NON_TERMINAL_CONDITION_GOOD,
-  NON_TERMINAL_CONDITION_BAD,
-  NON_TERMINAL_CONDITION,
-  NON_TERMINAL_SENTENCE,
-} non_terminal_e;
 
 typedef struct NonTerminal {
   non_terminal_e type;
@@ -49,7 +62,7 @@ typedef struct NonTerminal {
     condition_t *condition;
     condition_good_t *condition_good;
     condition_bad_t *condition_bad;
-  } non_terminal;
+  } nonTerminal;
   char value[MAX_TERMINAL_SIZE];
 } non_terminal_t;
 
@@ -68,18 +81,15 @@ typedef struct ElementSet {
 } element_set_t;
 
 typedef struct SLRShift {
-  int next_state;
+  int nextState;
 } slr_rule_shift_t;
 
 typedef struct SLRReduce {
+  union {
+    condition_e condition_annotation;
+  } annotation;
   non_terminal_t *nonTerminal;
 } slr_rule_reduce_t;
-
-typedef enum SLRRuleE {
-  SLR_RULE_SHIFT,
-  SLR_RULE_REDUCE,
-  SLR_RULE_ACCEPT,
-} slr_rule_e;
 
 typedef struct SLRRule {
   slr_rule_e type;
@@ -105,12 +115,6 @@ typedef struct DFANodeMapItem {
   dfa_node_t *node;
 } dfa_map_item_t;
 
-typedef enum DFANodeE {
-  DFA_NODE_ROOT,
-  DFA_NODE_TERMINAL,
-  DFA_NODE_REGULAR,
-} dfa_node_e;
-
 typedef struct DFANode {
   dfa_node_e kind;
   int id;
@@ -119,8 +123,6 @@ typedef struct DFANode {
   dfa_node_t *failure;
   lexeme_t *lexeme;
 } dfa_node_t;
-
-typedef enum ConditionE { CONDITION_GOOD, CONDITION_BAD } condition_e;
 
 typedef struct ConditionGood {
   lexeme_t *good;
@@ -176,7 +178,8 @@ void failureNode(lexeme_t *currLexeme, char *currTerminal, int *numElements,
                  char ch, int *inputIndex, int *strIndex, char *contents);
 void error(const char *msg);
 int hashElement(element_t *e, int size);
-rule_table_item_t *searchSLRRule(element_t *key, rule_table_item_t *hashTable[],
-                                 int size);
+rule_table_item_t *searchSLRRule(element_t *key,
+                                 rule_table_item_t *hashTable[]);
 void insertSLRRule(element_t *key, slr_rule_t *rule,
-                   rule_table_item_t *hashTable[], int size);
+                   rule_table_item_t *hashTable[]);
+void printElements(element_set_t *elementSet);
