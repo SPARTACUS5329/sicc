@@ -691,7 +691,7 @@ void printElements(element_set_t *elementSet) {
   printf("\n\n");
 }
 
-int main() {
+sentence_t *getParseTree(const char *filename) {
   initLexemes();
   initTerminals();
   initNonTerminals();
@@ -703,7 +703,7 @@ int main() {
 
   initParserStates();
 
-  char *contents = readFile("./sample.txt");
+  char *contents = readFile(filename);
   if (!contents)
     error("Error in reading input file");
 
@@ -719,11 +719,8 @@ int main() {
   elementSet = reverseElementSet(elementSet);
 
   sentence_t *sentence = parser(elementSet);
-  printf("%s\n", sentence->she->value);
-  printf("%s\n", sentence->is->value);
-  printf("%s\n", sentence->condition->condition.good->good->value);
 
-  return 0;
+  return sentence;
 }
 
 unsigned long hash(char *str, int size) {

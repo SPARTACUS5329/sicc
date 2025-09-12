@@ -6,7 +6,11 @@ use std::{
     rc::Rc,
 };
 
-use crate::{lexer::DFANode, utils::NiceError};
+use crate::{
+    codegen::{CEnum, CStruct, CStructField, CType, CTypedef},
+    lexer::DFANode,
+    utils::{pascal, snake, NiceError},
+};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Terminal {
@@ -101,6 +105,13 @@ impl NonTerminal {
         }
 
         Ok(NonTerminal::new(non_terminal, index))
+    }
+
+    fn get_typedef(self: &Self) -> CTypedef {
+        return CTypedef {
+            struct_name: pascal(vec![self.value.clone()]),
+            type_name: snake(vec![self.value.clone(), "t".to_string()]),
+        };
     }
 }
 
@@ -286,6 +297,43 @@ impl Rule {
             pos: elements.pos,
         })
     }
+
+    pub fn get_fields(self: &Self) -> Vec<CStructField> {
+        return self
+            .elements
+            .element_set
+            .iter()
+            .map(|e| {
+                let field = match &e.borrow().element {
+                    ElementE::ElementLexeme(lexeme) => CStructField::new(
+                        CType::CCustomType("lexeme_t".to_string()),
+                        lexeme.value.as_str(),
+                        1,
+                        None,
+                        None,
+                    ),
+                    ElementE::ElementTerminal(terminal) => CStructField::new(
+                        CType::CCustomType("terminal_t".to_string()),
+                        terminal.value.as_str(),
+                        1,
+                        None,
+                        None,
+                    ),
+                    ElementE::ElementNonTerminal(non_terminal) => CStructField::new(
+                        CType::CCustomType(snake(vec![
+                            non_terminal.value.clone(),
+                            "t".to_string(),
+                        ])),
+                        non_terminal.value.as_str(),
+                        1,
+                        None,
+                        None,
+                    ),
+                };
+                field
+            })
+            .collect();
+    }
 }
 
 #[derive(Clone)]
@@ -373,6 +421,186 @@ impl Production {
             rules,
             pos: index,
         })
+    }
+
+    pub fn get_typedef(self: &Self) -> Vec<CTypedef> {
+        let non_terminal = match &self.non_terminal_element.borrow().element {
+            ElementE::ElementNonTerminal(non_terminal) => non_terminal.clone(),
+            _ => {
+                panic!("Unexpected error: expected non_terminal, received something else");
+            }
+        };
+
+        let mut typedefs: Vec<CTypedef> = vec![non_terminal.get_typedef()];
+
+        if self.rules.ruleset.len() == 1 {
+            return typedefs;
+        }
+
+        for rule in self.rules.ruleset.iter() {
+            let struct_name = pascal(vec![non_terminal.value.clone(), rule.annotation.clone()]);
+            let type_name = snake(vec![
+                non_terminal.value.clone(),
+                rule.annotation.clone(),
+                "t".to_string(),
+            ]);
+
+            typedefs.push(CTypedef {
+                struct_name,
+                type_name,
+            });
+        }
+
+        return typedefs;
+    }
+
+    pub fn get_enum(self: &Self) -> Option<CEnum> {
+        if self.rules.ruleset.len() == 1 {
+            return None;
+        }
+
+        let non_terminal = match &self.non_terminal_element.borrow().element {
+            ElementE::ElementNonTerminal(non_terminal) => non_terminal.clone(),
+            _ => {
+                panic!("Unexpected error: expected non_terminal, received something else");
+            }
+        };
+
+        let enum_name = pascal(vec![non_terminal.value.clone(), "E".to_string()]);
+        let type_name = snake(vec![non_terminal.value.clone(), "e".to_string()]);
+
+        let mut enum_types: Vec<String> = vec![];
+        for rule in self.rules.ruleset.iter() {
+            let e: String = snake(vec![non_terminal.value.clone(), rule.annotation.clone()]);
+            enum_types.push(e.to_uppercase());
+        }
+
+        return Some(CEnum {
+            enum_name,
+            type_name,
+            enums: enum_types,
+        });
+    }
+
+    pub fn get_fields(self: &Self) -> Vec<CStructField> {
+        let non_terminal = match &self.non_terminal_element.borrow().element {
+            ElementE::ElementNonTerminal(non_terminal) => non_terminal.clone(),
+            _ => {
+                panic!("Unexpected error: expected non_terminal, received something else");
+            }
+        };
+
+        let mut fields: Vec<CStructField> = vec![];
+
+        fields.push(CStructField::new(
+            CType::CCustomType(snake(vec![non_terminal.value.clone(), "t".to_string()])),
+            non_terminal.value.to_lowercase().as_str(),
+            1,
+            None,
+            None,
+        ));
+
+        if self.rules.ruleset.len() == 1 {
+            return fields;
+        }
+
+        for rule in self.rules.ruleset.iter() {
+            fields.push(CStructField::new(
+                CType::CCustomType(snake(vec![
+                    non_terminal.value.clone(),
+                    rule.annotation.clone(),
+                    "t".to_string(),
+                ])),
+                snake(vec![
+                    non_terminal.value.to_lowercase(),
+                    rule.annotation.clone(),
+                ])
+                .as_str(),
+                1,
+                None,
+                None,
+            ));
+        }
+
+        return fields;
+    }
+
+    pub fn get_struct(self: &Self) -> Vec<CStruct> {
+        let mut structs: Vec<CStruct> = vec![];
+
+        let non_terminal = match &self.non_terminal_element.borrow().element {
+            ElementE::ElementNonTerminal(non_terminal) => non_terminal.clone(),
+            _ => {
+                panic!("Unexpected error: expected non_terminal, received something else");
+            }
+        };
+
+        if self.rules.ruleset.len() == 1 {
+            let element_fields: Vec<CStructField> = self.rules.ruleset[0].get_fields();
+            structs.push(CStruct::new(
+                pascal(vec![non_terminal.value.clone()]).as_str(),
+                snake(vec![non_terminal.value.clone(), "t".to_string()]).as_str(),
+                element_fields,
+            ));
+
+            return structs;
+        }
+
+        for rule in self.rules.ruleset.iter() {
+            let element_fields: Vec<CStructField> = rule.get_fields();
+
+            structs.push(CStruct::new(
+                pascal(vec![non_terminal.value.clone(), rule.annotation.clone()]).as_str(),
+                snake(vec![
+                    non_terminal.value.clone(),
+                    rule.annotation.clone(),
+                    "t".to_string(),
+                ])
+                .as_str(),
+                element_fields,
+            ));
+        }
+
+        structs.push(CStruct::new(
+            pascal(vec![non_terminal.value.clone()]).as_str(),
+            snake(vec![non_terminal.value.clone(), "t".to_string()]).as_str(),
+            vec![
+                CStructField::new(
+                    CType::CCustomType(snake(vec![non_terminal.value.clone(), "t".to_string()])),
+                    "type",
+                    0,
+                    None,
+                    None,
+                ),
+                CStructField::new(
+                    CType::CUnion,
+                    non_terminal.value.clone().as_str(),
+                    0,
+                    None,
+                    Some(
+                        self.rules
+                            .ruleset
+                            .iter()
+                            .map(|r| {
+                                CStructField::new(
+                                    CType::CCustomType(snake(vec![
+                                        non_terminal.value.clone(),
+                                        r.annotation.clone(),
+                                        "t".to_string(),
+                                    ])),
+                                    r.annotation.clone().to_lowercase().as_str(),
+                                    1,
+                                    None,
+                                    None,
+                                )
+                            })
+                            .collect(),
+                    ),
+                ),
+            ],
+        ));
+
+        return structs;
     }
 }
 

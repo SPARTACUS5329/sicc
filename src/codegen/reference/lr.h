@@ -7,13 +7,15 @@ typedef struct Lexeme lexeme_t;
 typedef struct Terminal terminal_t;
 typedef struct NonTerminal non_terminal_t;
 typedef struct Element element_t;
-typedef struct Derivative derivative_t;
+typedef struct ElementSet element_set_t;
 typedef struct SLRShift slr_rule_shift_t;
+typedef struct SLRReduce slr_rule_reduce_t;
 typedef struct SLRRule slr_rule_t;
 typedef struct RuleTableItem rule_table_item_t;
 typedef struct LRState lr_state_t;
 typedef struct DFANodeMapItem dfa_map_item_t;
 typedef struct DFANode dfa_node_t;
+typedef struct SymbolTableItem symbol_table_item_t;
 typedef struct ConditionGood condition_good_t;
 typedef struct ConditionBad condition_bad_t;
 typedef struct Condition condition_t;
@@ -85,9 +87,6 @@ typedef struct SLRShift {
 } slr_rule_shift_t;
 
 typedef struct SLRReduce {
-  union {
-    condition_e condition_annotation;
-  } annotation;
   non_terminal_t *nonTerminal;
 } slr_rule_reduce_t;
 
@@ -124,6 +123,12 @@ typedef struct DFANode {
   lexeme_t *lexeme;
 } dfa_node_t;
 
+typedef struct SymbolTableItem {
+  int key;
+  char *edge;
+  void *data;
+} symbol_table_item_t;
+
 typedef struct ConditionGood {
   lexeme_t *good;
 } condition_good_t;
@@ -146,40 +151,44 @@ typedef struct Sentence {
   condition_t *condition;
 } sentence_t;
 
-typedef struct SymbolTableItem {
-  int key;
-  char *edge;
-  void *data;
-} symbol_table_item_t;
-
+dfa_node_t *createLexerNode(dfa_node_e kind, int id, int failurePrefixLength);
+void initLexerNodes();
+void addFailureNodes();
+void addLexemesToLexerNodes();
+void addLexerTrieEdges();
+void initLexemes();
+void initTerminals();
+void initNonTerminals();
+void failureNode(lexeme_t *currLexeme, char *currTerminal, int *numElements,
+                 element_t **elements, dfa_node_t *node, dfa_node_t *root,
+                 char ch, int *inputIndex, int *strIndex, char *contents);
+element_set_t *lex(char *contents);
+char *readFile(const char *filename);
+lr_state_t *createParserState(int id);
+void createShiftRule(char key[MAX_TERMINAL_SIZE],
+                     symbol_table_item_t **hashTable, int nextState,
+                     rule_table_item_t **ruleTable);
+void createReduceRule(char key[MAX_TERMINAL_SIZE],
+                      char nonTerminal[MAX_TERMINAL_SIZE],
+                      symbol_table_item_t **hashTable,
+                      rule_table_item_t **ruleTable);
+void initParserStates();
+void error(const char *msg);
+element_set_t *reverseElementSet(element_set_t *elementSet);
+void printElements(element_set_t *elementSet);
 unsigned long hash(char *str, int size);
 dfa_map_item_t *searchLexerNode(char *key, dfa_map_item_t *hashTable[],
                                 int size);
 void insertLexerNode(char *key, dfa_node_t *node, dfa_map_item_t *hashTable[],
                      int size);
-dfa_node_t *createLexerNode(dfa_node_e kind, int id, int failurePrefixLength);
-void initLexemes();
-void initLexerNodes();
-void addFailureNodes();
-void addLexerTrieEdges();
-void addLexemesToLexerNodes();
-char *readFile(const char *filename);
-element_set_t *lex(char *contents);
-symbol_table_item_t *searchSymbol(char *key, symbol_table_item_t *hashTable[],
-                                  int size);
-void insertSymbol(char *key, void *data, symbol_table_item_t *hashTable[],
-                  int size);
-symbol_table_item_t *searchSymbol(char *key, symbol_table_item_t *hashTable[],
-                                  int size);
-void insertSymbol(char *key, void *data, symbol_table_item_t *hashTable[],
-                  int size);
-void failureNode(lexeme_t *currLexeme, char *currTerminal, int *numElements,
-                 element_t **elements, dfa_node_t *node, dfa_node_t *root,
-                 char ch, int *inputIndex, int *strIndex, char *contents);
-void error(const char *msg);
 int hashElement(element_t *e, int size);
 rule_table_item_t *searchSLRRule(element_t *key,
                                  rule_table_item_t *hashTable[]);
 void insertSLRRule(element_t *key, slr_rule_t *rule,
                    rule_table_item_t *hashTable[]);
-void printElements(element_set_t *elementSet);
+symbol_table_item_t *searchSymbol(char *key, symbol_table_item_t *hashTable[],
+                                  int size);
+void insertSymbol(char *key, void *data, symbol_table_item_t *hashTable[],
+                  int size);
+sentence_t *parser(element_set_t *elements);
+sentence_t *getParseTree(const char *filename);

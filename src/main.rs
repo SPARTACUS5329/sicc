@@ -4,6 +4,9 @@ use std::{collections::HashSet, rc::Rc};
 use generator::{compute_kmp_failures, dfa_to_dll};
 use parser::{find_nullables, get_first_sets, get_follow_sets};
 use utils::NiceError;
+
+use crate::codegen::codegen;
+mod codegen;
 mod generator;
 mod lexer;
 mod parser;
@@ -37,6 +40,8 @@ fn main() -> Result<(), NiceError> {
     let parser_i0 = generator::construct_fsm(&program.productions);
     let mut visited: HashSet<i32> = HashSet::new();
     generator::construct_slr_table(Rc::clone(&parser_i0), &mut visited);
+
+    codegen(program.productions);
 
     Ok(())
 }

@@ -1,5 +1,5 @@
-use std::fs::OpenOptions;
-use std::io::Read;
+use std::fs::{File, OpenOptions};
+use std::io::{self, Read, Write};
 
 #[derive(Debug)]
 pub struct NiceError {
@@ -43,4 +43,35 @@ pub fn read_lines(filename: &String) -> Result<Vec<String>, NiceError> {
     let contents = read_file(&filename)?;
     let lines: Vec<String> = contents.lines().map(String::from).collect();
     Ok(lines)
+}
+
+pub fn write_lines_to_file(filename: &str, lines: Vec<String>) -> io::Result<()> {
+    let mut file = File::create(filename)?;
+
+    for line in lines {
+        writeln!(file, "{}", line)?;
+    }
+
+    Ok(())
+}
+
+pub fn pascal(s: Vec<String>) -> String {
+    s.into_iter()
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => {
+                    first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                }
+                None => String::new(),
+            }
+        })
+        .collect::<String>()
+}
+
+pub fn snake(s: Vec<String>) -> String {
+    s.into_iter()
+        .map(|word| word.to_lowercase())
+        .collect::<Vec<_>>()
+        .join("_")
 }
