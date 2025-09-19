@@ -543,9 +543,7 @@ fn generate_header_file(productions: Productions) {
     ));
 
     for production in productions.production_set.iter() {
-        let _ = production.get_struct().iter().map(|s| {
-            c_structs.push(s.clone());
-        });
+        c_structs.extend(production.get_struct().iter().cloned());
     }
 
     for c_struct in c_structs.iter() {
@@ -821,7 +819,7 @@ fn generate_header_file(productions: Productions) {
         ],
     ));
 
-    let root_production = &productions.production_set[1];
+    let root_production = &productions.production_set[0];
     let root_non_terminal = match &root_production.non_terminal_element.borrow().element {
         ElementE::ElementNonTerminal(non_terminal) => non_terminal.clone(),
         _ => {

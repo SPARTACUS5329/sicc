@@ -303,34 +303,22 @@ impl Rule {
             .elements
             .element_set
             .iter()
-            .map(|e| {
-                let field = match &e.borrow().element {
-                    ElementE::ElementLexeme(lexeme) => CStructField::new(
-                        CType::CCustomType("lexeme_t".to_string()),
-                        lexeme.value.as_str(),
-                        1,
-                        None,
-                        None,
-                    ),
-                    ElementE::ElementTerminal(terminal) => CStructField::new(
-                        CType::CCustomType("terminal_t".to_string()),
-                        terminal.value.as_str(),
-                        1,
-                        None,
-                        None,
-                    ),
-                    ElementE::ElementNonTerminal(non_terminal) => CStructField::new(
-                        CType::CCustomType(snake(vec![
-                            non_terminal.value.clone(),
-                            "t".to_string(),
-                        ])),
-                        non_terminal.value.as_str(),
-                        1,
-                        None,
-                        None,
-                    ),
-                };
-                field
+            .filter_map(|e| match &e.borrow().element {
+                ElementE::ElementLexeme(lexeme) => Some(CStructField::new(
+                    CType::CCustomType("lexeme_t".to_string()),
+                    lexeme.value.as_str(),
+                    1,
+                    None,
+                    None,
+                )),
+                ElementE::ElementTerminal(_) => None,
+                ElementE::ElementNonTerminal(non_terminal) => Some(CStructField::new(
+                    CType::CCustomType(snake(vec![non_terminal.value.clone(), "t".to_string()])),
+                    non_terminal.value.as_str(),
+                    1,
+                    None,
+                    None,
+                )),
             })
             .collect();
     }
@@ -566,7 +554,7 @@ impl Production {
             snake(vec![non_terminal.value.clone(), "t".to_string()]).as_str(),
             vec![
                 CStructField::new(
-                    CType::CCustomType(snake(vec![non_terminal.value.clone(), "t".to_string()])),
+                    CType::CCustomType(snake(vec![non_terminal.value.clone(), "e".to_string()])),
                     "type",
                     0,
                     None,

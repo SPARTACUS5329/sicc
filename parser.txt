@@ -2,13 +2,11 @@
 
 %%
 
-exp ->
-	@plus exp "+" exp
-	| @minus exp "-" exp
-	| @value NUMBER
+sentence ->
+	@sentence SHE IS condition
 ;
 
-sample ->
-	@eps eps
-	| @else "else"
+condition ->
+	@good GOOD
+	| @bad BAD
 ;

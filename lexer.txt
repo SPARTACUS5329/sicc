@@ -2,3 +2,7 @@ NUMBER: ^she$
 HE: ^he$
 HIS: ^his$
 HERS: ^hers$
+SHE: ^SHE$
+IS: ^IS$
+GOOD: ^GOOD$
+BAD: ^BAD$
